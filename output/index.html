@@ -576,6 +576,9 @@ canvas { display: block; width: 100%; height: 100%; }
   let bulletPool = [], obstaclePool = [];
   let sharedBulletGeo, sharedBulletMat, sharedTrailMat;
   let trajectoryLine, tunnelMesh, tunnelUniforms, starPoints;
+  let starLines; // warp star line segments
+  let nebulaUniforms; // FBM nebula shader uniforms
+  let laserGroup; // volumetric laser beams
   let difficulty = 1, shakeIntensity = 0;
   let wave = 1, waveKills = 0, waveThreshold = 8;
   let waveBreakTimer = 0;
@@ -611,7 +614,7 @@ canvas { display: block; width: 100%; height: 100%; }
     'uniform float u_time;',
     'uniform float u_pulse;',
     'uniform float u_hueShift;',
-    'uniform vec3 u_ripples[8];',   // xyz = bullet world position
+    'uniform vec3 u_ripples[8];',
     'uniform int u_rippleCount;',
     'varying vec2 vUv;',
     'varying vec3 vWorldPos;',
@@ -622,82 +625,75 @@ canvas { display: block; width: 100%; height: 100%; }
     '  return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);',
     '}',
     '',
-    'float hash(vec2 p) {',
-    '  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);',
-    '}',
+    'float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }',
     '',
-    'void main() {',
-    '  vec2 uv = vUv;',
-    '',
-    '  // ── Periodic CRT glitch: horizontal UV jitter ──',
-    '  float glitchCycle = sin(u_time * 0.7) * 0.5 + 0.5;',
-    '  glitchCycle = pow(glitchCycle, 8.0);', // narrow spike
-    '  float scanRow = floor(uv.y * 80.0);',
-    '  float rowRand = hash(vec2(scanRow, floor(u_time * 12.0)));',
-    '  float tearOffset = 0.0;',
-    '  if (rowRand > 0.97 && glitchCycle > 0.2) {',
-    '    tearOffset = (hash(vec2(scanRow * 0.3, u_time)) - 0.5) * 0.04 * glitchCycle;',
-    '  }',
-    '  if (rowRand > 0.993 && glitchCycle > 0.1) {',
-    '    tearOffset = (hash(vec2(scanRow * 0.7, u_time * 3.0)) - 0.5) * 0.12 * glitchCycle;',
-    '  }',
-    '  uv.x += tearOffset + u_pulse * 0.01 * sin(uv.y * 200.0 + u_time * 50.0);',
-    '',
+    '// Grid drawing helper',
+    'float drawGrid(vec2 uv, float timeOffset, float lineW) {',
     '  float u = uv.x * 48.0;',
-    '  float v = uv.y * 96.0 + u_time * 8.0;',
-    '',
-    '  // Hex grid computation',
+    '  float v = uv.y * 96.0 + timeOffset;',
     '  vec2 hexUV = vec2(u, v * 0.5);',
     '  vec2 fracA = fract(hexUV) - 0.5;',
     '  vec2 fracB = fract(hexUV + 0.5) - 0.5;',
     '  float dA = max(abs(fracA.x), abs(fracA.y));',
     '  float dB = max(abs(fracB.x), abs(fracB.y));',
     '  float d = min(dA, dB);',
+    '  return 1.0 - smoothstep(0.42 - lineW, 0.42, d);',
+    '}',
     '',
+    'void main() {',
+    '  vec2 uv = vUv;',
+    '  // View vector for fake parallax',
+    '  vec3 viewDir = normalize(cameraPosition - vWorldPos);',
+    '  vec2 parallaxOffset = viewDir.xy * 0.015;',
+    '',
+    '  // Glitch tear',
+    '  float glitchCycle = pow(sin(u_time * 0.7) * 0.5 + 0.5, 8.0);',
+    '  float tearOffset = 0.0;',
+    '  if (hash(vec2(floor(uv.y * 80.0), floor(u_time * 12.0))) > 0.97 && glitchCycle > 0.2) {',
+    '    tearOffset = (hash(vec2(uv.y, u_time)) - 0.5) * 0.04 * glitchCycle;',
+    '  }',
+    '  uv.x += tearOffset + u_pulse * 0.01 * sin(uv.y * 200.0 + u_time * 50.0);',
+    '',
+    '  // --- 1. Parallax dual-layer grid ---',
+    '  float timeBase = u_time * 8.0;',
     '  float lineW = 0.02 + u_pulse * 0.015;',
-    '  float gridLine = 1.0 - smoothstep(0.42 - lineW, 0.42, d);',
+    '  // Background layer (dim, offset)',
+    '  float gridBg = drawGrid(uv + parallaxOffset, timeBase * 0.8, lineW * 1.5) * 0.3;',
+    '  // Foreground layer (bright)',
+    '  float gridFg = drawGrid(uv, timeBase, lineW);',
+    '  float gridTotal = max(gridFg, gridBg);',
     '',
-    '  float ringLine = 1.0 - smoothstep(0.01, 0.03, abs(fract(uv.y * 24.0 + u_time * 0.5) - 0.5) - 0.47);',
+    '  // --- 2. Speed leading lines (enhanced longitudinal streaks) ---',
     '  float lonLine = 1.0 - smoothstep(0.01, 0.025, abs(fract(uv.x * 16.0) - 0.5) - 0.47);',
+    '  // Floor zone accelerated guide lines',
+    '  float floorMask = smoothstep(0.3, 0.0, abs(uv.x - 0.5));',
+    '  float speedLines = (1.0 - smoothstep(0.0, 0.05, abs(fract(uv.x * 32.0) - 0.5) - 0.48)) * floorMask;',
+    '  float speedDash = fract(uv.y * 20.0 + u_time * 40.0);',
+    '  speedLines *= smoothstep(0.0, 0.2, speedDash) * smoothstep(1.0, 0.8, speedDash) * 1.5;',
     '',
-    '  float lines = max(gridLine * 0.6, max(ringLine * 0.35, lonLine * 0.2));',
+    '  // Composite all lines',
+    '  float lines = max(gridTotal * 0.6, max(lonLine * 0.2, speedLines));',
+    '  float vertGlow = gridTotal * (sin(uv.x * 48.0 * 3.14159 + u_time * 4.0) * 0.5 + 0.5) * 0.3;',
     '',
-    '  float pulse = sin(u * 3.14159 + u_time * 4.0) * 0.5 + 0.5;',
-    '  float vertGlow = gridLine * pulse * 0.3;',
-    '',
-    '  // Desaturated teal hue (sat 0.55 instead of 0.85)',
+    '  // Color mapping',
     '  float hue = 0.50 + u_hueShift + sin(uv.y * 2.0 + u_time) * 0.03;',
-    '  float sat = 0.55;',
     '  float val = (lines + vertGlow) * (0.22 + u_pulse * 0.8);',
-    '',
     '  float depth = 1.0 - uv.y * 0.7;',
     '  val *= depth;',
+    '  vec3 col = hsv2rgb(vec3(hue, 0.65, val));',
     '',
-    '  vec3 col = hsv2rgb(vec3(hue, sat, val));',
-    '  vec3 bg = vec3(0.01, 0.012, 0.025);',
-    '  col = mix(bg, col, clamp(lines + vertGlow, 0.0, 1.0));',
-    '',
-    '  // Subtle warm accent on ring lines',
-    '  col += vec3(0.08, 0.02, 0.0) * ringLine * depth * 0.15;',
-    '',
-    '  // ── Bullet ripple waves on tunnel wall ──',
+    '  // Bullet ripples',
     '  float rippleTotal = 0.0;',
     '  for (int i = 0; i < 8; i++) {',
     '    if (i >= u_rippleCount) break;',
-    '    vec3 bp = u_ripples[i];',
-    '    float dist = distance(vWorldPos, bp);',
-    '    // Expanding ring wave from bullet position',
-    '    float wave = sin(dist * 12.0 - u_time * 18.0) * 0.5 + 0.5;',
-    '    wave *= wave;',
-    '    // Attenuate by distance: strong near bullet, fading outward',
-    '    float atten = 1.0 / (1.0 + dist * dist * 0.3);',
-    '    // Sharp falloff beyond certain radius',
-    '    atten *= smoothstep(8.0, 2.0, dist);',
-    '    rippleTotal += wave * atten;',
+    '    float dist = distance(vWorldPos, u_ripples[i]);',
+    '    float wave = pow(sin(dist * 12.0 - u_time * 18.0) * 0.5 + 0.5, 2.0);',
+    '    rippleTotal += wave * (1.0 / (1.0 + dist * dist * 0.3)) * smoothstep(8.0, 2.0, dist);',
     '  }',
-    '  rippleTotal = clamp(rippleTotal, 0.0, 1.0);',
-    '  // Add cyan-white ripple glow to the grid',
-    '  col += vec3(0.3, 0.8, 1.0) * rippleTotal * 0.35;',
+    '  col += vec3(0.3, 0.8, 1.0) * clamp(rippleTotal, 0.0, 1.0) * 0.35;',
+    '',
+    '  // Speed line cyan highlight',
+    '  col += vec3(0.0, 0.9, 1.0) * speedLines * depth * 0.8;',
     '',
     '  gl_FragColor = vec4(col, 1.0);',
     '}'
@@ -1269,6 +1265,7 @@ canvas { display: block; width: 100%; height: 100%; }
     createTunnel();
     createStarfield();
     createLights();
+    createStageLasers();
     createTrajectoryLine();
     createAmmoUI();
     createLivesUI();
@@ -1335,37 +1332,69 @@ canvas { display: block; width: 100%; height: 100%; }
   }
 
   function createStarfield() {
-    const N = 800, pos = new Float32Array(N * 3), cols = new Float32Array(N * 3);
+    // --- A. Warp speed star lines (LineSegments) ---
+    const N = 400;
+    const pos = new Float32Array(N * 2 * 3);
+    const cols = new Float32Array(N * 2 * 3);
     for (let i = 0; i < N; i++) {
-      const a = Math.random() * Math.PI * 2, r = (TUNNEL_RADIUS - 0.3) * (0.5 + Math.random() * 0.5);
-      pos[i*3] = Math.cos(a) * r; pos[i*3+1] = Math.sin(a) * r; pos[i*3+2] = -Math.random() * TUNNEL_LENGTH;
-      const t = Math.random();
-      if (t < 0.5) { cols[i*3]=0.3; cols[i*3+1]=0.8; cols[i*3+2]=1.0; }
-      else if (t < 0.8) { cols[i*3]=1; cols[i*3+1]=0.3; cols[i*3+2]=0.7; }
-      else { cols[i*3]=1; cols[i*3+1]=1; cols[i*3+2]=0.6; }
+      const a = Math.random() * Math.PI * 2;
+      const r = (TUNNEL_RADIUS - 0.2) * (0.3 + Math.random() * 0.7);
+      const z = -Math.random() * TUNNEL_LENGTH;
+      const length = 1.0 + Math.random() * 4.0;
+      pos[i*6] = Math.cos(a)*r; pos[i*6+1] = Math.sin(a)*r; pos[i*6+2] = z;
+      pos[i*6+3] = Math.cos(a)*r; pos[i*6+4] = Math.sin(a)*r; pos[i*6+5] = z - length;
+      cols[i*6]=0.5; cols[i*6+1]=0.9; cols[i*6+2]=1.0;
+      cols[i*6+3]=0.0; cols[i*6+4]=0.2; cols[i*6+5]=0.5;
     }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     geo.setAttribute('color', new THREE.BufferAttribute(cols, 3));
-    starPoints = new THREE.Points(geo, new THREE.PointsMaterial({
-      size: 0.08, vertexColors: true, transparent: true, opacity: 0.7,
-      depthWrite: false, blending: THREE.AdditiveBlending
+    starLines = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({
+      vertexColors: true, transparent: true, opacity: 0.6,
+      blending: THREE.AdditiveBlending, depthWrite: false
     }));
-    scene.add(starPoints);
+    scene.add(starLines);
 
-    // Nebula end-cap
-    const nc = document.createElement('canvas'); nc.width = 512; nc.height = 512;
-    const nCtx = nc.getContext('2d');
-    const g = nCtx.createRadialGradient(256,256,0,256,256,256);
-    g.addColorStop(0,'rgba(0,180,255,0.25)'); g.addColorStop(0.3,'rgba(120,0,255,0.15)');
-    g.addColorStop(0.6,'rgba(255,0,120,0.08)'); g.addColorStop(1,'rgba(0,0,0,0)');
-    nCtx.fillStyle = g; nCtx.fillRect(0,0,512,512);
-    const nebTex = new THREE.CanvasTexture(nc);
-    const neb = new THREE.Mesh(
-      new THREE.PlaneGeometry(TUNNEL_RADIUS * 2.5, TUNNEL_RADIUS * 2.5),
-      new THREE.MeshBasicMaterial({ map: nebTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide })
-    );
-    neb.position.z = -TUNNEL_LENGTH + 2; scene.add(neb);
+    // --- B. FBM Nebula end-cap ---
+    nebulaUniforms = { u_time: { value: 0.0 }, u_hueShift: { value: 0.0 } };
+    const nebMat = new THREE.ShaderMaterial({
+      uniforms: nebulaUniforms,
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+      vertexShader: 'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
+      fragmentShader: [
+        'uniform float u_time; uniform float u_hueShift; varying vec2 vUv;',
+        'float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }',
+        'float noise(vec2 p) {',
+        '  vec2 i = floor(p), f = fract(p);',
+        '  vec2 u = f*f*(3.0-2.0*f);',
+        '  return mix(mix(hash(i+vec2(0.0,0.0)), hash(i+vec2(1.0,0.0)), u.x),',
+        '             mix(hash(i+vec2(0.0,1.0)), hash(i+vec2(1.0,1.0)), u.x), u.y);',
+        '}',
+        'float fbm(vec2 p) {',
+        '  float f=0.0, amp=0.5;',
+        '  for(int i=0; i<4; i++){ f += amp*noise(p); p*=2.0; amp*=0.5; }',
+        '  return f;',
+        '}',
+        'vec3 hsv2rgb(vec3 c) { vec4 K=vec4(1.0,2.0/3.0,1.0/3.0,3.0); vec3 p=abs(fract(c.xxx+K.xyz)*6.0-K.www); return c.z*mix(K.xxx,clamp(p-K.xxx,0.0,1.0),c.y); }',
+        'void main() {',
+        '  vec2 uv = vUv * 2.0 - 1.0;',
+        '  float d = length(uv);',
+        '  float t = u_time * 0.2;',
+        '  mat2 rot = mat2(cos(t), -sin(t), sin(t), cos(t));',
+        '  vec2 p = rot * uv * 3.0;',
+        '  float n = fbm(p - vec2(0.0, u_time*0.5));',
+        '  float coreMask = smoothstep(0.15, 0.4, d);',
+        '  float edgeMask = smoothstep(1.0, 0.6, d);',
+        '  vec3 col1 = hsv2rgb(vec3(0.6 + u_hueShift, 0.8, 0.1));',
+        '  vec3 col2 = hsv2rgb(vec3(0.5 + u_hueShift, 0.6, 1.0));',
+        '  vec3 finalCol = mix(col1, col2, n * 1.5) * coreMask * edgeMask;',
+        '  gl_FragColor = vec4(finalCol, finalCol.r * 2.0);',
+        '}'
+      ].join('\n')
+    });
+    const neb = new THREE.Mesh(new THREE.PlaneGeometry(TUNNEL_RADIUS * 3, TUNNEL_RADIUS * 3), nebMat);
+    neb.position.z = -TUNNEL_LENGTH + 5;
+    scene.add(neb);
   }
 
   function createTrajectoryLine() {
@@ -1374,6 +1403,34 @@ canvas { display: block; width: 100%; height: 100%; }
     geo.setDrawRange(0, 2);
     trajectoryLine = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: COL_CYAN, transparent: true, opacity: 0.4 }));
     scene.add(trajectoryLine);
+  }
+
+  function createStageLasers() {
+    laserGroup = new THREE.Group();
+    laserGroup.position.z = -TUNNEL_LENGTH * 0.7;
+    // Canvas gradient texture for feathered beam edges
+    const canvas = document.createElement('canvas');
+    canvas.width = 128; canvas.height = 512;
+    const ctx = canvas.getContext('2d');
+    const grad = ctx.createLinearGradient(0, 0, 128, 0);
+    grad.addColorStop(0, 'rgba(255,255,255,0)');
+    grad.addColorStop(0.5, 'rgba(255,255,255,1)');
+    grad.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 128, 512);
+    const tex = new THREE.CanvasTexture(canvas);
+    const mat = new THREE.MeshBasicMaterial({
+      map: tex, color: COL_CYAN,
+      transparent: true, opacity: 0.15,
+      blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide
+    });
+    const geo = new THREE.PlaneGeometry(3, TUNNEL_RADIUS * 2.5);
+    for (let i = 0; i < 6; i++) {
+      const laser = new THREE.Mesh(geo, mat);
+      laser.rotation.z = (Math.PI / 3) * i;
+      laserGroup.add(laser);
+    }
+    scene.add(laserGroup);
   }
   function computeTrajectory() {
     const pa = trajectoryLine.geometry.attributes.position, dir = getAimDirection();
@@ -1839,8 +1896,22 @@ canvas { display: block; width: 100%; height: 100%; }
     }
 
     if (!gameActive) {
-      // Keep tunnel shader animating even on title/gameover
+      // Keep visuals animating on title/gameover
       if (tunnelUniforms) tunnelUniforms.u_time.value = globalTime;
+      if (nebulaUniforms) nebulaUniforms.u_time.value = globalTime;
+      if (starLines) {
+        const sp = starLines.geometry.attributes.position;
+        for (let i = 0; i < sp.count / 2; i++) {
+          sp.array[i*6+2] += dt * 20;
+          sp.array[i*6+5] += dt * 20;
+          if (sp.array[i*6+2] > 5) {
+            const z = -TUNNEL_LENGTH - Math.random() * 20;
+            sp.array[i*6+2] = z; sp.array[i*6+5] = z - (1.0 + Math.random() * 4.0);
+          }
+        }
+        sp.needsUpdate = true;
+      }
+      if (laserGroup) laserGroup.rotation.z += dt * 0.3;
       composer.render();
       return;
     }
@@ -1973,14 +2044,55 @@ canvas { display: block; width: 100%; height: 100%; }
       if (tunnelUniforms.u_hueShift.value < 0.001) tunnelUniforms.u_hueShift.value = 0;
     }
 
-    // Starfield scroll
-    if (starPoints) {
-      const sp = starPoints.geometry.attributes.position;
-      for (let i = 0; i < sp.count; i++) {
-        sp.array[i*3+2] += dt * 8;
-        if (sp.array[i*3+2] > 5) sp.array[i*3+2] -= TUNNEL_LENGTH;
+    // Starfield warp lines scroll (speed increases with combo)
+    if (starLines) {
+      const warpSpeed = 20 + (combo > 5 ? combo * 1.5 : 0);
+      const sp = starLines.geometry.attributes.position;
+      for (let i = 0; i < sp.count / 2; i++) {
+        sp.array[i*6+2] += dt * warpSpeed;
+        sp.array[i*6+5] += dt * warpSpeed;
+        if (sp.array[i*6+2] > 5) {
+          const z = -TUNNEL_LENGTH - Math.random() * 20;
+          const length = 1.0 + Math.random() * 4.0;
+          sp.array[i*6+2] = z;
+          sp.array[i*6+5] = z - length;
+        }
       }
       sp.needsUpdate = true;
+    }
+
+    // Nebula animation
+    if (nebulaUniforms) {
+      nebulaUniforms.u_time.value = globalTime;
+      nebulaUniforms.u_hueShift.value = tunnelUniforms.u_hueShift.value;
+    }
+
+    // Stage laser rotation & intensity (combo-driven)
+    if (laserGroup) {
+      const laserRotSpeed = 0.5 + (combo > 10 ? 1.5 : 0);
+      laserGroup.rotation.z += dt * laserRotSpeed;
+      const targetColor = combo >= 20 ? COL_GOLD : (combo >= 10 ? COL_MAGENTA : COL_CYAN);
+      laserGroup.children[0].material.color.lerp(new THREE.Color(targetColor), dt * 2.0);
+      laserGroup.children[0].material.opacity = THREE.MathUtils.lerp(
+        laserGroup.children[0].material.opacity,
+        combo > 5 ? 0.35 : 0.1,
+        dt * 5.0
+      );
+    }
+
+    // Reactive fog (life-based mood)
+    {
+      const targetFogColor = new THREE.Color(0x06060e);
+      let targetFogDensity = 0.008;
+      if (lives <= 1) {
+        targetFogColor.setHex(0x3a0005);
+        targetFogDensity = 0.015;
+      } else if (combo >= 15) {
+        targetFogColor.setHex(0x1a0525);
+        targetFogDensity = 0.004;
+      }
+      scene.fog.color.lerp(targetFogColor, dt * 2.0);
+      scene.fog.density = THREE.MathUtils.lerp(scene.fog.density, targetFogDensity, dt * 2.0);
     }
 
     // FOV pulse
@@ -2076,6 +2188,13 @@ canvas { display: block; width: 100%; height: 100%; }
     isHolding = false; autoFireAccum = 0;
     camera.fov = baseFov; camera.updateProjectionMatrix();
     activePowerup = null; powerupTimer = 0; shield = 0;
+    // Reset fog
+    if (scene.fog) { scene.fog.density = 0.008; scene.fog.color.setHex(0x06060e); }
+    // Reset lasers
+    if (laserGroup && laserGroup.children[0]) {
+      laserGroup.children[0].material.opacity = 0.15;
+      laserGroup.children[0].material.color.setHex(COL_CYAN);
+    }
     scoreEl.textContent = '0'; comboEl.textContent = 'x1';
     wavePanelEl.textContent = '第 1 波';
     powerupInd.classList.remove('active');

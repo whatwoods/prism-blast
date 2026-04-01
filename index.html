@@ -89,15 +89,18 @@ canvas { display: block; width: 100%; height: 100%; }
 #title-screen.visible { opacity: 1; visibility: visible; }
 #title-screen.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
 #title-screen h1 {
-  font-family: 'Orbitron', sans-serif; font-weight: 900; font-size: clamp(42px, 8vw, 80px);
-  color: var(--neon-cyan);
-  text-shadow: 0 0 60px rgba(0,240,255,0.2), 0 0 4px rgba(0,240,255,0.6);
-  letter-spacing: 10px; position: relative;
+  font-family: 'Orbitron', sans-serif; font-weight: 900; font-size: clamp(48px, 9vw, 90px);
+  color: transparent;
+  background: linear-gradient(180deg, #ffffff 0%, var(--neon-cyan) 80%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  filter: drop-shadow(0 0 40px rgba(0,240,255,0.4)) drop-shadow(0 0 8px rgba(0,240,255,0.6));
+  letter-spacing: 14px; position: relative;
   animation: title-float 6s ease-in-out infinite;
 }
 @keyframes title-float {
-  0%,100% { transform: translateY(0); text-shadow: 0 0 60px rgba(0,240,255,0.2), 0 0 4px rgba(0,240,255,0.6); }
-  50% { transform: translateY(-6px); text-shadow: 0 0 80px rgba(0,240,255,0.35), 0 0 6px rgba(0,240,255,0.8); }
+  0%,100% { transform: translateY(0); filter: drop-shadow(0 0 40px rgba(0,240,255,0.4)) drop-shadow(0 0 8px rgba(0,240,255,0.6)); }
+  50% { transform: translateY(-8px); filter: drop-shadow(0 0 60px rgba(0,240,255,0.5)) drop-shadow(0 0 12px rgba(0,240,255,0.9)); }
 }
 #title-screen .sub {
   font-family: 'Share Tech Mono', monospace; font-size: clamp(11px, 1.5vw, 14px);
@@ -116,30 +119,30 @@ canvas { display: block; width: 100%; height: 100%; }
   to { opacity: 1; transform: translateY(0); }
 }
 #title-screen .start-btn {
-  margin-top: 32px; padding: 16px 56px;
-  font-family: 'Orbitron', sans-serif; font-weight: 700; font-size: 14px;
-  letter-spacing: 6px; color: #fff;
-  background: linear-gradient(135deg, rgba(0,240,255,0.15) 0%, rgba(0,240,255,0.05) 50%, rgba(120,0,255,0.1) 100%);
-  border: 1px solid rgba(0,240,255,0.4);
-  border-radius: 2px;
+  margin-top: 40px; padding: 18px 64px;
+  font-family: 'Orbitron', sans-serif; font-weight: 700; font-size: 16px;
+  letter-spacing: 8px; color: #ffffff;
+  background: rgba(0, 240, 255, 0.05);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(0, 240, 255, 0.3);
+  border-radius: 4px;
   cursor: pointer; text-transform: uppercase;
   position: relative; overflow: hidden;
   opacity: 0; animation: fade-up 1s ease 1s forwards;
-  box-shadow: 0 0 20px rgba(0,240,255,0.08), inset 0 1px 0 rgba(255,255,255,0.08);
-  text-shadow: 0 0 12px rgba(0,240,255,0.6);
-  transition: all 0.25s ease;
+  box-shadow: 0 8px 32px rgba(0, 240, 255, 0.1), inset 0 0 12px rgba(0, 240, 255, 0.05);
+  text-shadow: 0 0 12px rgba(0,240,255,0.8);
+  transition: all 0.4s cubic-bezier(0.25, 1, 0.5, 1);
 }
 #title-screen .start-btn:hover {
-  background: linear-gradient(135deg, rgba(0,240,255,0.3) 0%, rgba(0,240,255,0.1) 50%, rgba(120,0,255,0.2) 100%);
-  border-color: rgba(0,240,255,0.8);
-  box-shadow: 0 0 40px rgba(0,240,255,0.2), 0 0 80px rgba(0,240,255,0.08), inset 0 0 30px rgba(0,240,255,0.06);
-  color: #fff;
-  text-shadow: 0 0 20px rgba(0,240,255,0.9), 0 0 40px rgba(0,240,255,0.3);
-  transform: scale(1.04);
+  background: rgba(0, 240, 255, 0.15);
+  border-color: rgba(0, 240, 255, 0.8);
+  box-shadow: 0 12px 48px rgba(0, 240, 255, 0.2), inset 0 0 24px rgba(0, 240, 255, 0.15);
+  transform: translateY(-4px);
+  text-shadow: 0 0 24px rgba(0,240,255,1);
 }
 #title-screen .start-btn:active {
-  transform: scale(0.97);
-  box-shadow: 0 0 15px rgba(0,240,255,0.3), inset 0 0 20px rgba(0,240,255,0.1);
+  transform: translateY(2px) scale(0.98);
+  box-shadow: 0 4px 16px rgba(0, 240, 255, 0.2);
 }
 #title-screen .start-btn::before {
   content: ''; position: absolute; inset: -1px; border-radius: 2px;
@@ -182,24 +185,25 @@ canvas { display: block; width: 100%; height: 100%; }
   pointer-events: none; z-index: 10;
   font-family: 'Share Tech Mono', monospace; color: var(--neon-cyan);
 }
-#hud .corner { position: absolute; width: 80px; height: 80px; opacity: 0.25; pointer-events: none; }
-#hud .corner.tl { top: 16px; left: 16px; border-top: 2px solid var(--neon-cyan); border-left: 2px solid var(--neon-cyan); }
-#hud .corner.tr { top: 16px; right: 16px; border-top: 2px solid var(--neon-cyan); border-right: 2px solid var(--neon-cyan); }
-#hud .corner.bl { bottom: 16px; left: 16px; border-bottom: 2px solid var(--neon-cyan); border-left: 2px solid var(--neon-cyan); }
-#hud .corner.br { bottom: 16px; right: 16px; border-bottom: 2px solid var(--neon-cyan); border-right: 2px solid var(--neon-cyan); }
+#hud .corner { position: absolute; width: 100px; height: 100px; opacity: 0.4; pointer-events: none; filter: drop-shadow(0 0 6px var(--neon-cyan)); }
+#hud .corner.tl { top: 20px; left: 20px; border-top: 2px solid var(--neon-cyan); border-left: 2px solid var(--neon-cyan); border-top-left-radius: 8px; }
+#hud .corner.tr { top: 20px; right: 20px; border-top: 2px solid var(--neon-cyan); border-right: 2px solid var(--neon-cyan); border-top-right-radius: 8px; }
+#hud .corner.bl { bottom: 20px; left: 20px; border-bottom: 2px solid var(--neon-cyan); border-left: 2px solid var(--neon-cyan); border-bottom-left-radius: 8px; }
+#hud .corner.br { bottom: 20px; right: 20px; border-bottom: 2px solid var(--neon-cyan); border-right: 2px solid var(--neon-cyan); border-bottom-right-radius: 8px; }
 
-#score-panel { position: absolute; top: 28px; left: 36px; font-family: 'Orbitron', sans-serif; }
-#score-panel .label { font-size: 10px; letter-spacing: 4px; opacity: 0.5; text-transform: uppercase; }
-#score-panel .value { font-size: 36px; font-weight: 900; line-height: 1; }
+#score-panel { position: absolute; top: 32px; left: 42px; font-family: 'Orbitron', sans-serif; text-shadow: 0 0 10px rgba(0,240,255,0.6); }
+#score-panel .label { font-size: 11px; letter-spacing: 6px; opacity: 0.7; text-transform: uppercase; margin-bottom: 4px; }
+#score-panel .value { font-size: 42px; font-weight: 900; line-height: 1; color: #fff; text-shadow: 0 0 20px rgba(0,240,255,0.8), 0 0 4px rgba(0,240,255,1); }
 
-#combo-panel { position: absolute; top: 28px; right: 36px; text-align: right; font-family: 'Orbitron', sans-serif; }
-#combo-panel .label { font-size: 10px; letter-spacing: 4px; opacity: 0.5; }
-#combo-panel .value { font-size: 28px; font-weight: 700; color: var(--neon-magenta); transition: transform 0.15s; }
+#combo-panel { position: absolute; top: 32px; right: 42px; text-align: right; font-family: 'Orbitron', sans-serif; text-shadow: 0 0 10px rgba(255,0,170,0.6); }
+#combo-panel .label { font-size: 11px; letter-spacing: 6px; opacity: 0.7; margin-bottom: 4px; }
+#combo-panel .value { font-size: 32px; font-weight: 700; color: #fff; text-shadow: 0 0 20px rgba(255,0,170,0.8), 0 0 4px rgba(255,0,170,1); transition: transform 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
 
 #wave-panel {
-  position: absolute; top: 68px; left: 36px;
-  font-family: 'Share Tech Mono', monospace; font-size: 11px;
-  letter-spacing: 3px; opacity: 0.45; text-transform: uppercase;
+  position: absolute; top: 84px; left: 42px;
+  font-family: 'Share Tech Mono', monospace; font-size: 12px;
+  letter-spacing: 4px; opacity: 0.6; text-transform: uppercase;
+  text-shadow: 0 0 8px rgba(0,240,255,0.4);
 }
 
 #wave-announce {
@@ -212,7 +216,7 @@ canvas { display: block; width: 100%; height: 100%; }
 }
 #wave-announce.show { opacity: 1; transform: translate(-50%,-50%) scale(1.1); }
 
-#lives-panel { position: absolute; bottom: 30px; left: 36px; display: flex; gap: 8px; align-items: center; }
+#lives-panel { position: absolute; bottom: 36px; left: 42px; display: flex; gap: 10px; align-items: center; filter: drop-shadow(0 0 4px var(--neon-magenta)); }
 .heart {
   width: 16px; height: 16px; background: var(--neon-magenta);
   clip-path: polygon(50% 0%, 100% 35%, 80% 100%, 50% 80%, 20% 100%, 0% 35%);
@@ -226,7 +230,7 @@ canvas { display: block; width: 100%; height: 100%; }
   transition: opacity 0.3s, transform 0.3s;
 }
 
-#ammo-bar { position: absolute; bottom: 30px; right: 36px; display: flex; gap: 5px; align-items: center; }
+#ammo-bar { position: absolute; bottom: 36px; right: 42px; display: flex; gap: 6px; align-items: center; filter: drop-shadow(0 0 6px var(--neon-cyan)); }
 #ammo-bar .dot {
   width: 10px; height: 24px; background: var(--neon-cyan);
   border-radius: 2px; transition: opacity 0.15s, transform 0.15s;
@@ -298,30 +302,47 @@ canvas { display: block; width: 100%; height: 100%; }
 #game-over {
   position: fixed; inset: 0; z-index: 60;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  background: rgba(6,6,14,0.92); opacity: 0; visibility: hidden;
-  transition: opacity 0.5s, visibility 0.5s;
+  background: rgba(6,6,14,0.7); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  opacity: 0; visibility: hidden;
+  transition: opacity 0.6s cubic-bezier(0.2, 0.8, 0.2, 1), visibility 0.6s;
 }
 #game-over.visible { opacity: 1; visibility: visible; }
 #game-over h2 {
-  font-family: 'Orbitron', sans-serif; font-weight: 900; font-size: 42px;
-  color: var(--neon-magenta); letter-spacing: 8px;
+  font-family: 'Orbitron', sans-serif; font-weight: 900; font-size: 48px;
+  color: transparent;
+  background: linear-gradient(180deg, #ffffff 0%, var(--neon-magenta) 80%);
+  -webkit-background-clip: text; background-clip: text;
+  filter: drop-shadow(0 0 20px rgba(255,0,170,0.5)) drop-shadow(0 0 5px rgba(255,0,170,0.8));
+  letter-spacing: 12px;
 }
 #game-over .final-score {
-  font-family: 'Orbitron', sans-serif; font-weight: 900; font-size: 64px;
-  color: var(--neon-cyan); margin: 16px 0;
+  font-family: 'Orbitron', sans-serif; font-weight: 900; font-size: 80px;
+  color: var(--neon-cyan); margin: 20px 0;
+  text-shadow: 0 0 40px rgba(0,240,255,0.4), 0 0 10px rgba(0,240,255,0.8);
 }
 #game-over .stat-line {
-  font-family: 'Share Tech Mono', monospace; font-size: 12px;
-  color: rgba(255,255,255,0.4); letter-spacing: 2px; margin-bottom: 32px;
+  font-family: 'Share Tech Mono', monospace; font-size: 14px;
+  color: rgba(255,255,255,0.6); letter-spacing: 4px; margin-bottom: 40px;
 }
 #game-over .restart-btn {
-  padding: 14px 48px; font-family: 'Orbitron', sans-serif; font-weight: 700;
-  font-size: 14px; letter-spacing: 4px; color: var(--bg-dark);
-  background: var(--neon-magenta); border: none; cursor: pointer;
-  clip-path: polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%);
-  transition: all 0.2s; pointer-events: auto;
+  padding: 16px 56px; font-family: 'Orbitron', sans-serif; font-weight: 700;
+  font-size: 16px; letter-spacing: 6px; color: #fff;
+  background: rgba(255, 0, 170, 0.1); backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 0, 170, 0.4); border-radius: 4px;
+  cursor: pointer; text-transform: uppercase;
+  box-shadow: 0 8px 32px rgba(255, 0, 170, 0.15), inset 0 0 12px rgba(255, 0, 170, 0.05);
+  text-shadow: 0 0 12px rgba(255, 0, 170, 0.8);
+  transition: all 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+  pointer-events: auto;
 }
-#game-over .restart-btn:hover { background: #fff; transform: scale(1.05); }
+#game-over .restart-btn:hover { 
+  background: rgba(255, 0, 170, 0.25); border-color: rgba(255, 0, 170, 0.8);
+  box-shadow: 0 12px 48px rgba(255, 0, 170, 0.3), inset 0 0 24px rgba(255, 0, 170, 0.15);
+  transform: translateY(-4px); text-shadow: 0 0 24px rgba(255, 0, 170, 1);
+}
+#game-over .restart-btn:active {
+  transform: translateY(2px) scale(0.98);
+}
 
 /* ─── SCORE POPUPS ─── */
 .score-popup {
@@ -871,41 +892,42 @@ canvas { display: block; width: 100%; height: 100%; }
     ensureAudio();
     const t = audioCtx.currentTime, out = getMasterOut();
     
-    // Modern EDM Laser Pluck (Sawtooth + Fast LPF Envelope)
+    // Deep muffled thump (低沉闷响)
+    // Layer 1: Low Sine punch
+    const sub = audioCtx.createOscillator(), subGain = audioCtx.createGain();
+    sub.type = 'sine';
+    sub.frequency.setValueAtTime(180, t);
+    sub.frequency.exponentialRampToValueAtTime(40, t + 0.12);
+    subGain.gain.setValueAtTime(0.3, t);
+    subGain.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+    sub.connect(subGain); subGain.connect(out);
+    sub.start(t); sub.stop(t + 0.12);
+    
+    // Layer 2: Muffled Triangle thud
     const osc = audioCtx.createOscillator(), oscG = audioCtx.createGain(), lpf = audioCtx.createBiquadFilter();
-    osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(800, t);
-    osc.frequency.exponentialRampToValueAtTime(100, t + 0.1); // pitch drop
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(300, t);
+    osc.frequency.exponentialRampToValueAtTime(60, t + 0.1);
     
     lpf.type = 'lowpass';
-    lpf.frequency.setValueAtTime(6000, t);
-    lpf.frequency.exponentialRampToValueAtTime(400, t + 0.08); // fast filter sweep
-    lpf.Q.value = 5; // resonance for that "pew" squelch
+    lpf.frequency.setValueAtTime(800, t); // very low cutoff for muffled feel
+    lpf.frequency.exponentialRampToValueAtTime(100, t + 0.1);
+    lpf.Q.value = 1;
     
-    oscG.gain.setValueAtTime(0.12, t);
+    oscG.gain.setValueAtTime(0.2, t);
     oscG.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
     
     osc.connect(lpf); lpf.connect(oscG); oscG.connect(out);
     osc.start(t); osc.stop(t + 0.1);
     
-    // Sub-bass kick punch (808 style)
-    const sub = audioCtx.createOscillator(), subGain = audioCtx.createGain();
-    sub.type = 'sine';
-    sub.frequency.setValueAtTime(120, t);
-    sub.frequency.exponentialRampToValueAtTime(30, t + 0.08);
-    subGain.gain.setValueAtTime(0.2, t);
-    subGain.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
-    sub.connect(subGain); subGain.connect(out);
-    sub.start(t); sub.stop(t + 0.08);
-    
-    // High-end transient click (White noise burst)
-    const nBuf = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.05, audioCtx.sampleRate);
+    // Layer 3: Minimal filtered noise for soft attack (no high-pass crackle)
+    const nBuf = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.03, audioCtx.sampleRate);
     const d = nBuf.getChannelData(0);
     for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
     const nSrc = audioCtx.createBufferSource(), nFilt = audioCtx.createBiquadFilter(), nGain = audioCtx.createGain();
     nSrc.buffer = nBuf;
-    nFilt.type = 'highpass'; nFilt.frequency.value = 4000;
-    nGain.gain.setValueAtTime(0.06, t);
+    nFilt.type = 'lowpass'; nFilt.frequency.value = 400; // Only let low-mid noise through
+    nGain.gain.setValueAtTime(0.08, t);
     nGain.gain.exponentialRampToValueAtTime(0.001, t + 0.03);
     nSrc.connect(nFilt); nFilt.connect(nGain); nGain.connect(out);
     nSrc.start(t);
@@ -1125,7 +1147,7 @@ canvas { display: block; width: 100%; height: 100%; }
   function initBulletPool() {
     sharedBulletGeo = new THREE.SphereGeometry(BALL_RADIUS * 0.45, 12, 12);
     sharedBulletMat = new THREE.MeshPhysicalMaterial({
-      color: COL_CYAN, emissive: COL_CYAN, emissiveIntensity: 2.5,
+      color: COL_CYAN, emissive: COL_CYAN, emissiveIntensity: 1.8,
       metalness: 1, roughness: 0, clearcoat: 1.0
     });
     sharedTrailMat = new THREE.ShaderMaterial({
@@ -1185,10 +1207,13 @@ canvas { display: block; width: 100%; height: 100%; }
     entry.mesh.position.copy(startPos);
     entry.trail.visible = true;
 
-    // Reset trail positions to start
+    // Pre-distribute trail positions to avoid massive overlapping bloom on frame 1
     const tp = entry.trailPositions;
     for (let i = 0; i < TRAIL_MAX_POINTS; i++) {
-      tp[i * 3] = startPos.x; tp[i * 3 + 1] = startPos.y; tp[i * 3 + 2] = startPos.z;
+        const offset = i * 0.05;
+        tp[i * 3] = startPos.x - dir.x * offset;
+        tp[i * 3 + 1] = startPos.y - dir.y * offset;
+        tp[i * 3 + 2] = startPos.z - dir.z * offset;
     }
     entry.trail.geometry.attributes.position.needsUpdate = true;
 
@@ -1550,7 +1575,7 @@ canvas { display: block; width: 100%; height: 100%; }
   }
   function computeTrajectory() {
     const pa = trajectoryLine.geometry.attributes.position, dir = getAimDirection();
-    const s = new THREE.Vector3(0, 0, 1.5), e = s.clone().addScaledVector(dir, TRAJECTORY_LEN);
+    const s = new THREE.Vector3(0, 0, 0.5), e = s.clone().addScaledVector(dir, TRAJECTORY_LEN);
     pa.array[0]=s.x; pa.array[1]=s.y; pa.array[2]=s.z;
     pa.array[3]=e.x; pa.array[4]=e.y; pa.array[5]=e.z;
     pa.needsUpdate = true;
@@ -1598,7 +1623,7 @@ canvas { display: block; width: 100%; height: 100%; }
     const cost = activePowerup === 'rapid' ? 0.5 : 1;
     ammo -= cost; if (ammo < 0) ammo = 0;
     updateAmmoUI(); playShoot();
-    const dir = getAimDirection(), startPos = new THREE.Vector3(0, 0, 1.5);
+    const dir = getAimDirection(), startPos = new THREE.Vector3(0, 0, 0.5);
     const dirs = [dir];
     if (activePowerup === 'triple') {
       const spread = 0.08;

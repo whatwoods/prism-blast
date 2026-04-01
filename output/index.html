@@ -182,11 +182,11 @@ canvas { display: block; width: 100%; height: 100%; }
   pointer-events: none; z-index: 10;
   font-family: 'Share Tech Mono', monospace; color: var(--neon-cyan);
 }
-#hud .corner { position: absolute; width: 120px; height: 120px; }
-#hud .corner.tl { top: 20px; left: 20px; border-top: 2px solid var(--neon-cyan); border-left: 2px solid var(--neon-cyan); }
-#hud .corner.tr { top: 20px; right: 20px; border-top: 2px solid var(--neon-cyan); border-right: 2px solid var(--neon-cyan); }
-#hud .corner.bl { bottom: 20px; left: 20px; border-bottom: 2px solid var(--neon-cyan); border-left: 2px solid var(--neon-cyan); }
-#hud .corner.br { bottom: 20px; right: 20px; border-bottom: 2px solid var(--neon-cyan); border-right: 2px solid var(--neon-cyan); }
+#hud .corner { position: absolute; width: 80px; height: 80px; opacity: 0.25; pointer-events: none; }
+#hud .corner.tl { top: 16px; left: 16px; border-top: 2px solid var(--neon-cyan); border-left: 2px solid var(--neon-cyan); }
+#hud .corner.tr { top: 16px; right: 16px; border-top: 2px solid var(--neon-cyan); border-right: 2px solid var(--neon-cyan); }
+#hud .corner.bl { bottom: 16px; left: 16px; border-bottom: 2px solid var(--neon-cyan); border-left: 2px solid var(--neon-cyan); }
+#hud .corner.br { bottom: 16px; right: 16px; border-bottom: 2px solid var(--neon-cyan); border-right: 2px solid var(--neon-cyan); }
 
 #score-panel { position: absolute; top: 28px; left: 36px; font-family: 'Orbitron', sans-serif; }
 #score-panel .label { font-size: 10px; letter-spacing: 4px; opacity: 0.5; text-transform: uppercase; }
@@ -219,6 +219,12 @@ canvas { display: block; width: 100%; height: 100%; }
   transition: opacity 0.3s, transform 0.3s;
 }
 .heart.lost { opacity: 0.15; transform: scale(0.7); }
+.shield-pip {
+  width: 16px; height: 16px; background: var(--neon-cyan);
+  clip-path: polygon(50% 0%, 100% 30%, 100% 70%, 50% 100%, 0% 70%, 0% 30%);
+  opacity: 0.9; filter: drop-shadow(0 0 4px var(--neon-cyan));
+  transition: opacity 0.3s, transform 0.3s;
+}
 
 #ammo-bar { position: absolute; bottom: 30px; right: 36px; display: flex; gap: 5px; align-items: center; }
 #ammo-bar .dot {
@@ -235,6 +241,28 @@ canvas { display: block; width: 100%; height: 100%; }
   opacity: 0; transition: opacity 0.3s;
 }
 #powerup-indicator.active { opacity: 1; }
+
+/* ─── MOBILE HUD ─── */
+@media (max-width: 600px) {
+  #lives-panel { bottom: 12px; left: 12px; gap: 4px; }
+  .heart { width: 12px; height: 12px; }
+  .shield-pip { width: 12px; height: 12px; }
+  #ammo-bar { bottom: 12px; right: 12px; gap: 3px; }
+  #ammo-bar .dot { width: 6px; height: 16px; }
+  #score-panel { top: 12px; left: 12px; }
+  #score-panel .value { font-size: 24px; }
+  #score-panel .label { font-size: 8px; }
+  #combo-panel { top: 12px; right: 12px; }
+  #combo-panel .value { font-size: 20px; }
+  #combo-panel .label { font-size: 8px; }
+  #wave-panel { top: 50px; left: 12px; font-size: 10px; letter-spacing: 2px; }
+  #powerup-indicator { bottom: 36px; font-size: 11px; letter-spacing: 2px; }
+  #hud .corner { width: 60px; height: 60px; }
+  #hud .corner.tl { top: 8px; left: 8px; }
+  #hud .corner.tr { top: 8px; right: 8px; }
+  #hud .corner.bl { bottom: 8px; left: 8px; }
+  #hud .corner.br { bottom: 8px; right: 8px; }
+}
 
 /* ─── CROSSHAIR (disabled) ─── */
 /*
@@ -503,12 +531,10 @@ canvas { display: block; width: 100%; height: 100%; }
     document.querySelectorAll('.ring').forEach(r => r.style.animationPlayState = 'paused');
   }
 
-  let THREE, CANNON, EffectComposer, RenderPass, UnrealBloomPass, ShaderPass;
+  let THREE, EffectComposer, RenderPass, UnrealBloomPass, ShaderPass;
   try {
     setProgress(5, '加载渲染引擎...');
     THREE = await import('https://esm.sh/three@0.152.2');
-    setProgress(30, '加载物理引擎...');
-    CANNON = await import('https://esm.sh/cannon-es@0.20.0');
     setProgress(50, '加载后处理模块...');
     EffectComposer = (await import('https://esm.sh/three@0.152.2/examples/jsm/postprocessing/EffectComposer.js')).EffectComposer;
     setProgress(65, '加载渲染通道...');
@@ -541,19 +567,22 @@ canvas { display: block; width: 100%; height: 100%; }
   const BULLET_POOL_SIZE = 50;
   const OBSTACLE_POOL_SIZE = 30;
 
-  let scene, camera, renderer, world, composer, bloomPass, glitchPass;
+  let scene, camera, renderer, composer, bloomPass, glitchPass;
   let clock, gameActive = false;
   let score = 0, combo = 1, comboTimer = 0, maxCombo = 1, kills = 0;
   let lives = MAX_LIVES, ammo = BASE_MAX_AMMO, maxAmmo = BASE_MAX_AMMO, ammoRegenAccum = 0;
   const mouseNDC = { x: 0, y: 0 };
-  let balls = [], obstacles = [], explosions = [], spawnAccum = 0;
+  let balls = [], obstacles = [], spawnAccum = 0;
   let bulletPool = [], obstaclePool = [];
   let sharedBulletGeo, sharedBulletMat, sharedTrailMat;
   let trajectoryLine, tunnelMesh, tunnelUniforms, starPoints;
   let difficulty = 1, shakeIntensity = 0;
   let wave = 1, waveKills = 0, waveThreshold = 8;
+  let waveBreakTimer = 0;
+  const WAVE_BREAK_DURATION = 3.0;
   let tunnelPulse = 0, fovPulse = 0, baseFov = 75;
   let powerups = [], activePowerup = null, powerupTimer = 0;
+  let shield = 0;
   let musicStarted = false, musicGain = null, musicOscillators = [];
   let glitchIntensity = 0;
   let globalTime = 0;
@@ -829,28 +858,81 @@ canvas { display: block; width: 100%; height: 100%; }
   function getMasterOut() { return masterFilter || audioCtx.destination; }
   function playShoot() {
     ensureAudio();
-    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
-    o.type = 'sawtooth'; o.frequency.setValueAtTime(880, audioCtx.currentTime);
-    o.frequency.exponentialRampToValueAtTime(220, audioCtx.currentTime + 0.1);
-    g.gain.setValueAtTime(0.15, audioCtx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.12);
-    o.connect(g); g.connect(getMasterOut()); o.start(); o.stop(audioCtx.currentTime + 0.12);
+    const t = audioCtx.currentTime, out = getMasterOut();
+    // Layer 1: Sub punch — slightly higher & punchier than hit
+    const sub = audioCtx.createOscillator(), sg = audioCtx.createGain();
+    sub.type = 'sine'; sub.frequency.setValueAtTime(140, t);
+    sub.frequency.exponentialRampToValueAtTime(50, t + 0.09);
+    sg.gain.setValueAtTime(0.12, t);
+    sg.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+    sub.connect(sg); sg.connect(out); sub.start(t); sub.stop(t + 0.1);
+    // Layer 2: Bright crackle grains — sharper & higher than hit's shatter grains
+    for (let k = 0; k < 6; k++) {
+      const delay = k * 0.012 + Math.random() * 0.008;
+      const grainLen = Math.floor(audioCtx.sampleRate * 0.01);
+      const gBuf = audioCtx.createBuffer(1, grainLen, audioCtx.sampleRate);
+      const gd = gBuf.getChannelData(0);
+      for (let i = 0; i < grainLen; i++) gd[i] = (Math.random() * 2 - 1) * (1 - i / grainLen);
+      const gs = audioCtx.createBufferSource(), gg = audioCtx.createGain();
+      const gf = audioCtx.createBiquadFilter();
+      gs.buffer = gBuf;
+      gf.type = 'highpass'; gf.frequency.value = 3500 + Math.random() * 3000; gf.Q.value = 0.7;
+      gg.gain.setValueAtTime(0.05 + Math.random() * 0.03, t + delay);
+      gg.gain.exponentialRampToValueAtTime(0.001, t + delay + 0.012);
+      gs.connect(gf); gf.connect(gg); gg.connect(out);
+      gs.start(t + delay); gs.stop(t + delay + 0.012);
+    }
+    // Layer 3: Tight mid snap — rising pitch for "launch" feel
+    const snap = audioCtx.createOscillator(), snapG = audioCtx.createGain();
+    const snapF = audioCtx.createBiquadFilter();
+    snap.type = 'triangle'; snap.frequency.setValueAtTime(600, t);
+    snap.frequency.exponentialRampToValueAtTime(1400, t + 0.04);
+    snap.frequency.exponentialRampToValueAtTime(300, t + 0.08);
+    snapF.type = 'bandpass'; snapF.frequency.value = 1800; snapF.Q.value = 2.5;
+    snapG.gain.setValueAtTime(0.05, t);
+    snapG.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+    snap.connect(snapF); snapF.connect(snapG); snapG.connect(out);
+    snap.start(t); snap.stop(t + 0.08);
   }
+  // ─── HAPTIC FEEDBACK (mobile) ───
+  function vibrate() { if (navigator.vibrate) navigator.vibrate(50); }
+
   function playHit() {
     ensureAudio();
-    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
-    o.type = 'square'; o.frequency.setValueAtTime(600, audioCtx.currentTime);
-    o.frequency.exponentialRampToValueAtTime(1200, audioCtx.currentTime + 0.05);
-    g.gain.setValueAtTime(0.12, audioCtx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.15);
-    o.connect(g); g.connect(getMasterOut()); o.start(); o.stop(audioCtx.currentTime + 0.15);
-    const buf = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.08, audioCtx.sampleRate);
-    const d = buf.getChannelData(0);
-    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
-    const n = audioCtx.createBufferSource(), ng = audioCtx.createGain();
-    n.buffer = buf; ng.gain.setValueAtTime(0.1, audioCtx.currentTime);
-    ng.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.08);
-    n.connect(ng); ng.connect(getMasterOut()); n.start(); n.stop(audioCtx.currentTime + 0.08);
+    const t = audioCtx.currentTime, out = getMasterOut();
+    // Layer 1: Light sub punch (quieter than shoot)
+    const sub = audioCtx.createOscillator(), sg = audioCtx.createGain();
+    sub.type = 'sine'; sub.frequency.setValueAtTime(80, t);
+    sub.frequency.exponentialRampToValueAtTime(30, t + 0.1);
+    sg.gain.setValueAtTime(0.08, t);
+    sg.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+    sub.connect(sg); sg.connect(out); sub.start(t); sub.stop(t + 0.12);
+    // Layer 2: Crackle — rapid series of tiny noise grains for shatter feel
+    for (let k = 0; k < 5; k++) {
+      const delay = k * 0.015 + Math.random() * 0.01;
+      const grainLen = Math.floor(audioCtx.sampleRate * 0.012);
+      const gBuf = audioCtx.createBuffer(1, grainLen, audioCtx.sampleRate);
+      const gd = gBuf.getChannelData(0);
+      for (let i = 0; i < grainLen; i++) gd[i] = (Math.random() * 2 - 1) * (1 - i / grainLen);
+      const gs = audioCtx.createBufferSource(), gg = audioCtx.createGain();
+      const gf = audioCtx.createBiquadFilter();
+      gs.buffer = gBuf;
+      gf.type = 'highpass'; gf.frequency.value = 2000 + Math.random() * 3000; gf.Q.value = 0.8;
+      gg.gain.setValueAtTime(0.06 + Math.random() * 0.04, t + delay);
+      gg.gain.exponentialRampToValueAtTime(0.001, t + delay + 0.015);
+      gs.connect(gf); gf.connect(gg); gg.connect(out);
+      gs.start(t + delay); gs.stop(t + delay + 0.015);
+    }
+    // Layer 3: Short filtered mid-frequency snap
+    const snap = audioCtx.createOscillator(), snapG = audioCtx.createGain();
+    const snapF = audioCtx.createBiquadFilter();
+    snap.type = 'triangle'; snap.frequency.setValueAtTime(800, t);
+    snap.frequency.exponentialRampToValueAtTime(200, t + 0.06);
+    snapF.type = 'bandpass'; snapF.frequency.value = 1200; snapF.Q.value = 2;
+    snapG.gain.setValueAtTime(0.06, t);
+    snapG.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+    snap.connect(snapF); snapF.connect(snapG); snapG.connect(out);
+    snap.start(t); snap.stop(t + 0.08);
   }
   function playDamage() {
     ensureAudio();
@@ -873,26 +955,8 @@ canvas { display: block; width: 100%; height: 100%; }
       o.start(audioCtx.currentTime + i * 0.06); o.stop(audioCtx.currentTime + i * 0.06 + 0.15);
     });
   }
-  function startMusic() {
-    if (musicStarted) return;
-    ensureAudio(); musicStarted = true;
-    musicGain = audioCtx.createGain(); musicGain.gain.value = 0.04;
-    musicGain.connect(getMasterOut());
-    [55, 82.5, 110].forEach(freq => {
-      const o = audioCtx.createOscillator(); o.type = 'sine'; o.frequency.value = freq;
-      const g = audioCtx.createGain(); g.gain.value = 0.3;
-      o.connect(g); g.connect(musicGain); o.start(); musicOscillators.push(o);
-    });
-    const lfo = audioCtx.createOscillator(); lfo.type = 'sine'; lfo.frequency.value = 0.15;
-    const lfoGain = audioCtx.createGain(); lfoGain.gain.value = 3;
-    lfo.connect(lfoGain);
-    const shimmer = audioCtx.createOscillator(); shimmer.type = 'triangle'; shimmer.frequency.value = 220;
-    lfoGain.connect(shimmer.frequency);
-    const sg = audioCtx.createGain(); sg.gain.value = 0.15;
-    shimmer.connect(sg); sg.connect(musicGain);
-    lfo.start(); shimmer.start(); musicOscillators.push(lfo, shimmer);
-  }
-  function stopMusic() { musicOscillators.forEach(o => { try { o.stop(); } catch(e) {} }); musicOscillators = []; musicStarted = false; }
+  function startMusic() { /* disabled */ }
+  function stopMusic() { }
 
   // ─── HIT-STOP AUDIO: Underwater LPF cut + release burst ───
   function engageHitStopAudio() {
@@ -947,7 +1011,7 @@ canvas { display: block; width: 100%; height: 100%; }
 
   // ─── OBJECT POOLS ───
   function initBulletPool() {
-    sharedBulletGeo = new THREE.SphereGeometry(BALL_RADIUS, 16, 16);
+    sharedBulletGeo = new THREE.SphereGeometry(BALL_RADIUS * 0.45, 12, 12);
     sharedBulletMat = new THREE.MeshPhysicalMaterial({
       color: COL_CYAN, emissive: COL_CYAN, emissiveIntensity: 2.5,
       metalness: 1, roughness: 0, clearcoat: 1.0
@@ -987,15 +1051,10 @@ canvas { display: block; width: 100%; height: 100%; }
       trail.visible = false;
       scene.add(trail);
 
-      const body = new CANNON.Body({
-        mass: 0.5, shape: new CANNON.Sphere(BALL_RADIUS),
-        linearDamping: 0, angularDamping: 0,
-      });
-      body.material = new CANNON.Material({ restitution: 1.0, friction: 0.0 });
-      body.position.set(0, 9999, 0);
-      body.velocity.set(0, 0, 0);
-      body.sleep();
-      world.addBody(body);
+      const body = {
+        position: { x: 0, y: 9999, z: 0 },
+        velocity: { x: 0, y: 0, z: 0 },
+      };
 
       bulletPool.push({ mesh, body, trail, trailPositions, active: false, age: 0 });
     }
@@ -1021,9 +1080,8 @@ canvas { display: block; width: 100%; height: 100%; }
     }
     entry.trail.geometry.attributes.position.needsUpdate = true;
 
-    entry.body.wakeUp();
-    entry.body.position.set(startPos.x, startPos.y, startPos.z);
-    entry.body.velocity.set(dir.x * BALL_SPEED, dir.y * BALL_SPEED, dir.z * BALL_SPEED);
+    entry.body.position.x = startPos.x; entry.body.position.y = startPos.y; entry.body.position.z = startPos.z;
+    entry.body.velocity.x = dir.x * BALL_SPEED; entry.body.velocity.y = dir.y * BALL_SPEED; entry.body.velocity.z = dir.z * BALL_SPEED;
 
     return entry;
   }
@@ -1032,10 +1090,8 @@ canvas { display: block; width: 100%; height: 100%; }
     entry.active = false;
     entry.mesh.visible = false;
     entry.trail.visible = false;
-    entry.body.velocity.set(0, 0, 0);
-    entry.body.angularVelocity.set(0, 0, 0);
-    entry.body.position.set(0, 9999, 0);
-    entry.body.sleep();
+    entry.body.velocity.x = 0; entry.body.velocity.y = 0; entry.body.velocity.z = 0;
+    entry.body.position.x = 0; entry.body.position.y = 9999; entry.body.position.z = 0;
   }
 
   function initObstaclePool() {
@@ -1101,13 +1157,10 @@ canvas { display: block; width: 100%; height: 100%; }
 
       scene.add(group);
 
-      const body = new CANNON.Body({
-        mass: 0, type: CANNON.Body.KINEMATIC,
-        shape: new CANNON.Sphere(1), // will update radius on acquire
-      });
-      body.position.set(0, 9999, 0);
-      body.sleep();
-      world.addBody(body);
+      const body = {
+        position: { x: 0, y: 9999, z: 0 },
+        radius: 1,
+      };
 
       obstaclePool.push({
         group, body, core, shell, rings, coreMat, shellMat,
@@ -1162,11 +1215,8 @@ canvas { display: block; width: 100%; height: 100%; }
     entry.group.scale.set(1, 1, 1);
 
     // Update physics body
-    entry.body.shapes[0].radius = size * 0.6;
-    entry.body.shapes[0].updateBoundingSphereRadius();
-    entry.body.updateBoundingRadius();
-    entry.body.wakeUp();
-    entry.body.position.set(px, py, pz);
+    entry.body.radius = size * 0.6;
+    entry.body.position.x = px; entry.body.position.y = py; entry.body.position.z = pz;
 
     return entry;
   }
@@ -1174,8 +1224,7 @@ canvas { display: block; width: 100%; height: 100%; }
   function releaseObstacle(entry) {
     entry.active = false;
     entry.group.visible = false;
-    entry.body.position.set(0, 9999, 0);
-    entry.body.sleep();
+    entry.body.position.x = 0; entry.body.position.y = 9999; entry.body.position.z = 0;
   }
 
   // ─── INIT ───
@@ -1215,11 +1264,6 @@ canvas { display: block; width: 100%; height: 100%; }
     glitchPass = new ShaderPass(glitchShaderDef);
     composer.addPass(glitchPass);
 
-    world = new CANNON.World({ gravity: new CANNON.Vec3(0, 0, 0) });
-    world.broadphase = new CANNON.NaiveBroadphase();
-    world.solver.iterations = 10;
-    world.defaultContactMaterial.restitution = 1.0;
-    world.defaultContactMaterial.friction = 0.0;
     clock = new THREE.Clock();
 
     createTunnel();
@@ -1230,6 +1274,7 @@ canvas { display: block; width: 100%; height: 100%; }
     createLivesUI();
     initBulletPool();
     initObstaclePool();
+    initExplosionPool();
     initDebrisPool();
 
     window.addEventListener('resize', onResize);
@@ -1341,7 +1386,14 @@ canvas { display: block; width: 100%; height: 100%; }
   function createAmmoUI() { ammoBarEl.innerHTML=''; for(let i=0;i<maxAmmo;i++){const d=document.createElement('div');d.className='dot';ammoBarEl.appendChild(d);} }
   function updateAmmoUI() { ammoBarEl.querySelectorAll('.dot').forEach((d,i) => d.classList.toggle('spent', i >= ammo)); }
   function createLivesUI() { livesPanel.innerHTML=''; for(let i=0;i<MAX_LIVES;i++){const h=document.createElement('div');h.className='heart';livesPanel.appendChild(h);} }
-  function updateLivesUI() { livesPanel.querySelectorAll('.heart').forEach((h,i) => h.classList.toggle('lost', i >= lives)); }
+  function updateLivesUI() {
+    livesPanel.querySelectorAll('.heart').forEach((h,i) => h.classList.toggle('lost', i >= lives));
+    // Shield indicators
+    livesPanel.querySelectorAll('.shield-pip').forEach(s => s.remove());
+    for (let i = 0; i < shield; i++) {
+      const s = document.createElement('div'); s.className = 'shield-pip'; livesPanel.appendChild(s);
+    }
+  }
   function getAimDirection() {
     const n = new THREE.Vector3(mouseNDC.x, mouseNDC.y, 0.5); n.unproject(camera);
     return n.sub(camera.position).normalize();
@@ -1436,11 +1488,16 @@ canvas { display: block; width: 100%; height: 100%; }
         tunnelUniforms.u_hueShift.value += 0.1;
         hitStopTimer = 0.06; // longer for big kills
       }
-      playHit();
+      playHit(); vibrate();
       if (waveKills >= waveThreshold) {
-        wave++; waveKills = 0; waveThreshold = Math.floor(8 + wave * 3);
+        // Enter wave break — stop spawning, let remaining obstacles clear
+        waveBreakTimer = WAVE_BREAK_DURATION;
+        waveKills = 0;
+        // Restore resources
         maxAmmo++; ammo = maxAmmo; createAmmoUI(); updateAmmoUI();
-        wavePanelEl.textContent = '第 ' + wave + ' 波'; announceWave(wave);
+        lives = MAX_LIVES; updateLivesUI();
+        // Spawn powerup during break
+        spawnPowerup();
       }
     } else {
       obs.coreMat.emissiveIntensity = 4.0;
@@ -1458,14 +1515,13 @@ canvas { display: block; width: 100%; height: 100%; }
     waveAnnEl.classList.remove('show'); void waveAnnEl.offsetWidth;
     waveAnnEl.classList.add('show');
     setTimeout(() => waveAnnEl.classList.remove('show'), 2000);
-    spawnPowerup();
   }
 
   // ─── POWERUPS ───
   const POWERUP_TYPES = [
     { name: '急速射击', color: COL_GOLD, effect: 'rapid' },
     { name: '三连发', color: COL_GREEN, effect: 'triple' },
-    { name: '修复', color: COL_MAGENTA, effect: 'heal' },
+    { name: '护盾', color: COL_MAGENTA, effect: 'shield' },
   ];
   function spawnPowerup() {
     const type = POWERUP_TYPES[Math.floor(Math.random() * POWERUP_TYPES.length)];
@@ -1483,7 +1539,7 @@ canvas { display: block; width: 100%; height: 100%; }
   }
   function activatePowerup(type) {
     playPowerup();
-    if (type.effect === 'heal') { lives = Math.min(lives + 2, MAX_LIVES); updateLivesUI(); spawnBonusPopup('修复 +2'); }
+    if (type.effect === 'shield') { shield = 2; updateLivesUI(); spawnBonusPopup('护盾 x2'); }
     else { activePowerup = type.effect; powerupTimer = 6; powerupInd.textContent = type.name; powerupInd.classList.add('active'); spawnBonusPopup(type.name); }
   }
   function spawnBonusPopup(text) {
@@ -1500,6 +1556,12 @@ canvas { display: block; width: 100%; height: 100%; }
 
   // ─── DAMAGE ───
   function takeDamage() {
+    if (shield > 0) {
+      shield--; updateLivesUI(); playDamage();
+      shakeIntensity = 0.3;
+      spawnBonusPopup('护盾抵挡!');
+      return;
+    }
     lives--; updateLivesUI(); playDamage();
     shakeIntensity = 0.5;
     // Strong glitch + chromatic aberration on damage
@@ -1517,59 +1579,95 @@ canvas { display: block; width: 100%; height: 100%; }
   }
 
   // ═══ 3. GPU SPARK EXPLOSIONS ═══
-  function createGPUExplosion(position, color, count, impactDir) {
-    count = count || 100;
-    const dir = impactDir || new THREE.Vector3(0, 0, -1);
-    const positions = new Float32Array(count * 3);
-    const velocities = new Float32Array(count * 3);
-    const livesArr = new Float32Array(count);
-    const seeds = new Float32Array(count);
-    for (let i = 0; i < count; i++) {
-      positions[i*3] = position.x; positions[i*3+1] = position.y; positions[i*3+2] = position.z;
-      const theta = Math.random() * Math.PI * 2, phi = Math.acos(2 * Math.random() - 1);
-      const spd = 5 + Math.random() * 20;
-      velocities[i*3] = Math.sin(phi) * Math.cos(theta) * spd;
-      velocities[i*3+1] = Math.sin(phi) * Math.sin(theta) * spd;
-      velocities[i*3+2] = Math.cos(phi) * spd;
-      livesArr[i] = 0.5 + Math.random() * 0.5;
-      seeds[i] = Math.random();
-    }
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geo.setAttribute('a_velocity', new THREE.BufferAttribute(velocities, 3));
-    geo.setAttribute('a_life', new THREE.BufferAttribute(livesArr, 1));
-    geo.setAttribute('a_seed', new THREE.BufferAttribute(seeds, 1));
+  // ─── GPU EXPLOSION POOL ───
+  const EXPLOSION_POOL_SIZE = 15;
+  const EXPLOSION_PARTICLE_COUNT = 30;
+  let explosionPool = [];
 
-    const threeColor = color instanceof THREE.Color ? color : new THREE.Color(color);
-    const mat = new THREE.ShaderMaterial({
-      uniforms: {
-        u_time: { value: 0.0 },
-        u_maxAge: { value: 0.9 },
-        u_color: { value: threeColor },
-        u_impactDir: { value: dir.clone() },
-      },
-      vertexShader: SPARK_VERT,
-      fragmentShader: SPARK_FRAG,
-      transparent: true,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    });
-    const points = new THREE.Points(geo, mat);
-    scene.add(points);
-    explosions.push({ points, age: 0, maxAge: 0.9 });
-
-    // Debris shards: angular fragments that fly outward, spin, shrink, and fade
-    if (count >= 60) {
-      spawnDebris(position, color, dir, count > 100 ? 12 : 8);
+  function initExplosionPool() {
+    for (let p = 0; p < EXPLOSION_POOL_SIZE; p++) {
+      const count = EXPLOSION_PARTICLE_COUNT;
+      const positions = new Float32Array(count * 3);
+      const velocities = new Float32Array(count * 3);
+      const livesArr = new Float32Array(count);
+      const seeds = new Float32Array(count);
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geo.setAttribute('a_velocity', new THREE.BufferAttribute(velocities, 3));
+      geo.setAttribute('a_life', new THREE.BufferAttribute(livesArr, 1));
+      geo.setAttribute('a_seed', new THREE.BufferAttribute(seeds, 1));
+      const mat = new THREE.ShaderMaterial({
+        uniforms: {
+          u_time: { value: 0.0 },
+          u_maxAge: { value: 0.9 },
+          u_color: { value: new THREE.Color() },
+          u_impactDir: { value: new THREE.Vector3(0, 0, -1) },
+        },
+        vertexShader: SPARK_VERT,
+        fragmentShader: SPARK_FRAG,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      });
+      const points = new THREE.Points(geo, mat);
+      points.visible = false;
+      scene.add(points);
+      explosionPool.push({ points, geo, mat, positions, velocities, livesArr, seeds, active: false, age: 0, maxAge: 0.9 });
     }
   }
 
+  function createGPUExplosion(position, color, count, impactDir) {
+    const dir = impactDir || new THREE.Vector3(0, 0, -1);
+    // Find inactive pool entry
+    let entry = null;
+    for (let i = 0; i < explosionPool.length; i++) {
+      if (!explosionPool[i].active) { entry = explosionPool[i]; break; }
+    }
+    if (!entry) {
+      // Steal oldest active
+      let oldest = null, oldestAge = -1;
+      for (let i = 0; i < explosionPool.length; i++) {
+        if (explosionPool[i].age > oldestAge) { oldest = explosionPool[i]; oldestAge = explosionPool[i].age; }
+      }
+      entry = oldest;
+    }
+
+    const cnt = EXPLOSION_PARTICLE_COUNT;
+    const pos = entry.positions, vel = entry.velocities, lives = entry.livesArr, sd = entry.seeds;
+    for (let i = 0; i < cnt; i++) {
+      pos[i*3] = position.x; pos[i*3+1] = position.y; pos[i*3+2] = position.z;
+      const theta = Math.random() * Math.PI * 2, phi = Math.acos(2 * Math.random() - 1);
+      const spd = 5 + Math.random() * 20;
+      vel[i*3] = Math.sin(phi) * Math.cos(theta) * spd;
+      vel[i*3+1] = Math.sin(phi) * Math.sin(theta) * spd;
+      vel[i*3+2] = Math.cos(phi) * spd;
+      lives[i] = 0.5 + Math.random() * 0.5;
+      sd[i] = Math.random();
+    }
+    entry.geo.attributes.position.needsUpdate = true;
+    entry.geo.attributes.a_velocity.needsUpdate = true;
+    entry.geo.attributes.a_life.needsUpdate = true;
+    entry.geo.attributes.a_seed.needsUpdate = true;
+
+    const threeColor = color instanceof THREE.Color ? color : new THREE.Color(color);
+    entry.mat.uniforms.u_time.value = 0;
+    entry.mat.uniforms.u_color.value.copy(threeColor);
+    entry.mat.uniforms.u_impactDir.value.copy(dir);
+    entry.points.visible = true;
+    entry.active = true;
+    entry.age = 0;
+
+    // Debris shards
+    spawnDebris(position, color, dir, 8);
+  }
+
   function updateExplosions(dt) {
-    for (let i = explosions.length - 1; i >= 0; i--) {
-      const e = explosions[i]; e.age += dt;
-      if (e.age > e.maxAge) { scene.remove(e.points); e.points.geometry.dispose(); e.points.material.dispose(); explosions.splice(i, 1); continue; }
-      // GPU handles all motion — just update the time uniform
-      e.points.material.uniforms.u_time.value = e.age;
+    for (let i = 0; i < explosionPool.length; i++) {
+      const e = explosionPool[i];
+      if (!e.active) continue;
+      e.age += dt;
+      if (e.age > e.maxAge) { e.active = false; e.points.visible = false; continue; }
+      e.mat.uniforms.u_time.value = e.age;
     }
     updateDebris(dt);
   }
@@ -1747,13 +1845,30 @@ canvas { display: block; width: 100%; height: 100%; }
       return;
     }
 
-    world.step(1/60, dt, 3);
+    // Manual velocity integration for bullets (replaces world.step)
+    for (let i = 0; i < balls.length; i++) {
+      const b = balls[i].body;
+      b.position.x += b.velocity.x * dt;
+      b.position.y += b.velocity.y * dt;
+      b.position.z += b.velocity.z * dt;
+    }
     difficulty = 1 + score / 5000;
 
-    // Spawn
-    spawnAccum += dt;
-    const spawnRate = Math.max(0.5, SPAWN_INTERVAL / difficulty);
-    if (spawnAccum > spawnRate && obstacles.length < MAX_OBSTACLES) { spawnObstacle(); spawnAccum = 0; }
+    // Spawn — paused during wave break
+    if (waveBreakTimer > 0) {
+      waveBreakTimer -= dt;
+      if (waveBreakTimer <= 0) {
+        // Break over — advance to next wave
+        waveBreakTimer = 0;
+        wave++; waveThreshold = Math.floor(8 + wave * 3);
+        wavePanelEl.textContent = '第 ' + wave + ' 波'; announceWave(wave);
+        for (let i = 0; i < 3; i++) spawnObstacle();
+      }
+    } else {
+      spawnAccum += dt;
+      const spawnRate = Math.max(0.5, SPAWN_INTERVAL / difficulty);
+      if (spawnAccum > spawnRate && obstacles.length < MAX_OBSTACLES) { spawnObstacle(); spawnAccum = 0; }
+    }
 
     // Auto-fire while holding
     if (isHolding) {
@@ -1947,20 +2062,20 @@ canvas { display: block; width: 100%; height: 100%; }
   function resetState() {
     balls.forEach(b => releaseBullet(b));
     obstacles.forEach(o => releaseObstacle(o._poolEntry));
-    explosions.forEach(e => { scene.remove(e.points); e.points.geometry.dispose(); e.points.material.dispose(); });
+    explosionPool.forEach(e => { e.active = false; e.points.visible = false; e.age = 0; });
     activeDebris.forEach(d => { d.active = false; d.mesh.visible = false; });
     activeDebris = [];
     powerups.forEach(p => scene.remove(p.mesh));
-    balls = []; obstacles = []; explosions = []; powerups = [];
+    balls = []; obstacles = []; powerups = [];
     score = 0; combo = 1; comboTimer = 0; maxCombo = 1; kills = 0;
     lives = MAX_LIVES; maxAmmo = BASE_MAX_AMMO; ammo = maxAmmo; ammoRegenAccum = 0;
     spawnAccum = 0; difficulty = 1; shakeIntensity = 0;
-    wave = 1; waveKills = 0; waveThreshold = 8; tunnelPulse = 0; fovPulse = 0;
+    wave = 1; waveKills = 0; waveThreshold = 8; waveBreakTimer = 0; tunnelPulse = 0; fovPulse = 0;
     glitchIntensity = 0;
     hitStopTimer = 0;
     isHolding = false; autoFireAccum = 0;
     camera.fov = baseFov; camera.updateProjectionMatrix();
-    activePowerup = null; powerupTimer = 0;
+    activePowerup = null; powerupTimer = 0; shield = 0;
     scoreEl.textContent = '0'; comboEl.textContent = 'x1';
     wavePanelEl.textContent = '第 1 波';
     powerupInd.classList.remove('active');

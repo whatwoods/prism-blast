@@ -555,6 +555,18 @@ canvas { display: block; width: 100%; height: 100%; }
   loadScreen.classList.add('done');
   document.getElementById('title-screen').classList.add('visible');
 
+  // 尝试自动播放背景音乐
+  startMusic();
+  const unlockAudio = () => {
+    startMusic();
+    document.removeEventListener('click', unlockAudio);
+    document.removeEventListener('touchstart', unlockAudio);
+    document.removeEventListener('keydown', unlockAudio);
+  };
+  document.addEventListener('click', unlockAudio);
+  document.addEventListener('touchstart', unlockAudio);
+  document.addEventListener('keydown', unlockAudio);
+
   // ═══════════════════════════════════════
   // ─── GAME CODE ───
   // ═══════════════════════════════════════
@@ -838,8 +850,8 @@ canvas { display: block; width: 100%; height: 100%; }
   ].join('\n');
 
   // ─── AUDIO ───
-  let audioCtx, masterFilter;
-  let hitStopAudioActive = false;
+  var audioCtx, masterFilter;
+  var hitStopAudioActive = false;
   function ensureAudio() {
     if (!audioCtx) {
       audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -850,45 +862,53 @@ canvas { display: block; width: 100%; height: 100%; }
       masterFilter.Q.value = 0.7;
       masterFilter.connect(audioCtx.destination);
     }
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume();
+    }
   }
   function getMasterOut() { return masterFilter || audioCtx.destination; }
   function playShoot() {
     ensureAudio();
     const t = audioCtx.currentTime, out = getMasterOut();
-    // Layer 1: Sub punch — slightly higher & punchier than hit
-    const sub = audioCtx.createOscillator(), sg = audioCtx.createGain();
-    sub.type = 'sine'; sub.frequency.setValueAtTime(140, t);
-    sub.frequency.exponentialRampToValueAtTime(50, t + 0.09);
-    sg.gain.setValueAtTime(0.12, t);
-    sg.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
-    sub.connect(sg); sg.connect(out); sub.start(t); sub.stop(t + 0.1);
-    // Layer 2: Bright crackle grains — sharper & higher than hit's shatter grains
-    for (let k = 0; k < 6; k++) {
-      const delay = k * 0.012 + Math.random() * 0.008;
-      const grainLen = Math.floor(audioCtx.sampleRate * 0.01);
-      const gBuf = audioCtx.createBuffer(1, grainLen, audioCtx.sampleRate);
-      const gd = gBuf.getChannelData(0);
-      for (let i = 0; i < grainLen; i++) gd[i] = (Math.random() * 2 - 1) * (1 - i / grainLen);
-      const gs = audioCtx.createBufferSource(), gg = audioCtx.createGain();
-      const gf = audioCtx.createBiquadFilter();
-      gs.buffer = gBuf;
-      gf.type = 'highpass'; gf.frequency.value = 3500 + Math.random() * 3000; gf.Q.value = 0.7;
-      gg.gain.setValueAtTime(0.05 + Math.random() * 0.03, t + delay);
-      gg.gain.exponentialRampToValueAtTime(0.001, t + delay + 0.012);
-      gs.connect(gf); gf.connect(gg); gg.connect(out);
-      gs.start(t + delay); gs.stop(t + delay + 0.012);
-    }
-    // Layer 3: Tight mid snap — rising pitch for "launch" feel
-    const snap = audioCtx.createOscillator(), snapG = audioCtx.createGain();
-    const snapF = audioCtx.createBiquadFilter();
-    snap.type = 'triangle'; snap.frequency.setValueAtTime(600, t);
-    snap.frequency.exponentialRampToValueAtTime(1400, t + 0.04);
-    snap.frequency.exponentialRampToValueAtTime(300, t + 0.08);
-    snapF.type = 'bandpass'; snapF.frequency.value = 1800; snapF.Q.value = 2.5;
-    snapG.gain.setValueAtTime(0.05, t);
-    snapG.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
-    snap.connect(snapF); snapF.connect(snapG); snapG.connect(out);
-    snap.start(t); snap.stop(t + 0.08);
+    
+    // Modern EDM Laser Pluck (Sawtooth + Fast LPF Envelope)
+    const osc = audioCtx.createOscillator(), oscG = audioCtx.createGain(), lpf = audioCtx.createBiquadFilter();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(800, t);
+    osc.frequency.exponentialRampToValueAtTime(100, t + 0.1); // pitch drop
+    
+    lpf.type = 'lowpass';
+    lpf.frequency.setValueAtTime(6000, t);
+    lpf.frequency.exponentialRampToValueAtTime(400, t + 0.08); // fast filter sweep
+    lpf.Q.value = 5; // resonance for that "pew" squelch
+    
+    oscG.gain.setValueAtTime(0.12, t);
+    oscG.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+    
+    osc.connect(lpf); lpf.connect(oscG); oscG.connect(out);
+    osc.start(t); osc.stop(t + 0.1);
+    
+    // Sub-bass kick punch (808 style)
+    const sub = audioCtx.createOscillator(), subGain = audioCtx.createGain();
+    sub.type = 'sine';
+    sub.frequency.setValueAtTime(120, t);
+    sub.frequency.exponentialRampToValueAtTime(30, t + 0.08);
+    subGain.gain.setValueAtTime(0.2, t);
+    subGain.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+    sub.connect(subGain); subGain.connect(out);
+    sub.start(t); sub.stop(t + 0.08);
+    
+    // High-end transient click (White noise burst)
+    const nBuf = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.05, audioCtx.sampleRate);
+    const d = nBuf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    const nSrc = audioCtx.createBufferSource(), nFilt = audioCtx.createBiquadFilter(), nGain = audioCtx.createGain();
+    nSrc.buffer = nBuf;
+    nFilt.type = 'highpass'; nFilt.frequency.value = 4000;
+    nGain.gain.setValueAtTime(0.06, t);
+    nGain.gain.exponentialRampToValueAtTime(0.001, t + 0.03);
+    nSrc.connect(nFilt); nFilt.connect(nGain); nGain.connect(out);
+    nSrc.start(t);
   }
   // ─── HAPTIC FEEDBACK (mobile) ───
   function vibrate() { if (navigator.vibrate) navigator.vibrate(50); }
@@ -896,63 +916,143 @@ canvas { display: block; width: 100%; height: 100%; }
   function playHit() {
     ensureAudio();
     const t = audioCtx.currentTime, out = getMasterOut();
-    // Layer 1: Light sub punch (quieter than shoot)
-    const sub = audioCtx.createOscillator(), sg = audioCtx.createGain();
-    sub.type = 'sine'; sub.frequency.setValueAtTime(80, t);
-    sub.frequency.exponentialRampToValueAtTime(30, t + 0.1);
-    sg.gain.setValueAtTime(0.08, t);
-    sg.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
-    sub.connect(sg); sg.connect(out); sub.start(t); sub.stop(t + 0.12);
-    // Layer 2: Crackle — rapid series of tiny noise grains for shatter feel
-    for (let k = 0; k < 5; k++) {
-      const delay = k * 0.015 + Math.random() * 0.01;
-      const grainLen = Math.floor(audioCtx.sampleRate * 0.012);
-      const gBuf = audioCtx.createBuffer(1, grainLen, audioCtx.sampleRate);
-      const gd = gBuf.getChannelData(0);
-      for (let i = 0; i < grainLen; i++) gd[i] = (Math.random() * 2 - 1) * (1 - i / grainLen);
-      const gs = audioCtx.createBufferSource(), gg = audioCtx.createGain();
-      const gf = audioCtx.createBiquadFilter();
-      gs.buffer = gBuf;
-      gf.type = 'highpass'; gf.frequency.value = 2000 + Math.random() * 3000; gf.Q.value = 0.8;
-      gg.gain.setValueAtTime(0.06 + Math.random() * 0.04, t + delay);
-      gg.gain.exponentialRampToValueAtTime(0.001, t + delay + 0.015);
-      gs.connect(gf); gf.connect(gg); gg.connect(out);
-      gs.start(t + delay); gs.stop(t + delay + 0.015);
-    }
-    // Layer 3: Short filtered mid-frequency snap
-    const snap = audioCtx.createOscillator(), snapG = audioCtx.createGain();
-    const snapF = audioCtx.createBiquadFilter();
-    snap.type = 'triangle'; snap.frequency.setValueAtTime(800, t);
-    snap.frequency.exponentialRampToValueAtTime(200, t + 0.06);
-    snapF.type = 'bandpass'; snapF.frequency.value = 1200; snapF.Q.value = 2;
-    snapG.gain.setValueAtTime(0.06, t);
-    snapG.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
-    snap.connect(snapF); snapF.connect(snapG); snapG.connect(out);
-    snap.start(t); snap.stop(t + 0.08);
+    
+    // EDM Synth Snare / Clap hybrid
+    // Layer 1: Snare body (Square wave pitch drop)
+    const osc = audioCtx.createOscillator(), oscG = audioCtx.createGain();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(300, t);
+    osc.frequency.exponentialRampToValueAtTime(80, t + 0.08);
+    oscG.gain.setValueAtTime(0.12, t);
+    oscG.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+    osc.connect(oscG); oscG.connect(out);
+    osc.start(t); osc.stop(t + 0.1);
+    
+    // Layer 2: White Noise Blast (Filtered Crackle)
+    const nBuf = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.1, audioCtx.sampleRate);
+    const d = nBuf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 2);
+    const nSrc = audioCtx.createBufferSource(), nFilt = audioCtx.createBiquadFilter(), nGain = audioCtx.createGain();
+    nSrc.buffer = nBuf;
+    nFilt.type = 'bandpass'; nFilt.frequency.value = 2500; nFilt.Q.value = 1.0;
+    nGain.gain.setValueAtTime(0.2, t);
+    nGain.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+    nSrc.connect(nFilt); nFilt.connect(nGain); nGain.connect(out);
+    nSrc.start(t);
+    
+    // Layer 3: Heavy Sub Punch (808 style bottom)
+    const sub = audioCtx.createOscillator(), subG = audioCtx.createGain();
+    sub.type = 'sine'; sub.frequency.setValueAtTime(100, t);
+    sub.frequency.exponentialRampToValueAtTime(40, t + 0.1);
+    subG.gain.setValueAtTime(0.25, t);
+    subG.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+    sub.connect(subG); subG.connect(out);
+    sub.start(t); sub.stop(t + 0.12);
   }
   function playDamage() {
     ensureAudio();
-    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
-    o.type = 'sawtooth'; o.frequency.setValueAtTime(120, audioCtx.currentTime);
-    o.frequency.exponentialRampToValueAtTime(40, audioCtx.currentTime + 0.3);
-    g.gain.setValueAtTime(0.2, audioCtx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.35);
-    o.connect(g); g.connect(getMasterOut()); o.start(); o.stop(audioCtx.currentTime + 0.35);
+    const t = audioCtx.currentTime, out = getMasterOut();
+    
+    // Heavy EDM Sub Wobble Down (Cyber Glitch)
+    const duration = 0.6;
+    
+    // Two detuned oscillators for thick reese bass feel
+    [120, 117].forEach((freq) => {
+      const osc = audioCtx.createOscillator();
+      const lpf = audioCtx.createBiquadFilter();
+      const gain = audioCtx.createGain();
+      
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(freq, t);
+      osc.frequency.exponentialRampToValueAtTime(20, t + duration);
+      
+      lpf.type = 'lowpass';
+      lpf.frequency.setValueAtTime(2000, t);
+      lpf.frequency.exponentialRampToValueAtTime(50, t + duration);
+      lpf.Q.value = 2.0;
+      
+      gain.gain.setValueAtTime(0.3, t);
+      // Stutter effect for EDM glitched feel
+      for (let i = 0; i < 8; i++) {
+        const step = t + (i / 8) * duration * 0.8;
+        gain.gain.linearRampToValueAtTime(0.05, step);
+        gain.gain.linearRampToValueAtTime(0.3, step + 0.02);
+      }
+      gain.gain.exponentialRampToValueAtTime(0.001, t + duration);
+      
+      osc.connect(lpf); lpf.connect(gain); gain.connect(out);
+      osc.start(t); osc.stop(t + duration);
+    });
+    
+    // Initial distortion crash (White noise punch)
+    const noiseBuf = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.15, audioCtx.sampleRate);
+    const nd = noiseBuf.getChannelData(0);
+    for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+    const nSrc = audioCtx.createBufferSource(), nFp = audioCtx.createBiquadFilter(), nG = audioCtx.createGain();
+    nSrc.buffer = noiseBuf;
+    nFp.type = 'lowpass'; nFp.frequency.value = 800;
+    nG.gain.setValueAtTime(0.2, t);
+    nG.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+    nSrc.connect(nFp); nFp.connect(nG); nG.connect(out);
+    nSrc.start(t);
   }
   function playPowerup() {
     ensureAudio();
-    [523, 659, 784, 1047].forEach((f, i) => {
-      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
-      o.type = 'sine'; o.frequency.value = f;
-      g.gain.setValueAtTime(0, audioCtx.currentTime + i * 0.06);
-      g.gain.linearRampToValueAtTime(0.08, audioCtx.currentTime + i * 0.06 + 0.02);
-      g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + i * 0.06 + 0.15);
-      o.connect(g); g.connect(getMasterOut());
-      o.start(audioCtx.currentTime + i * 0.06); o.stop(audioCtx.currentTime + i * 0.06 + 0.15);
+    const t = audioCtx.currentTime, out = getMasterOut();
+    
+    // Synthwave Arpeggio Build-up (Square Wave + Filter Sweep)
+    const freqs = [523.25, 622.25, 783.99, 932.33, 1174.66]; // C5, D#5, G5, A#5, D6
+    const seqLen = freqs.length, noteDur = 0.05;
+    
+    const masterLpf = audioCtx.createBiquadFilter();
+    masterLpf.type = 'lowpass';
+    masterLpf.frequency.setValueAtTime(400, t);
+    masterLpf.frequency.exponentialRampToValueAtTime(8000, t + seqLen * noteDur);
+    masterLpf.Q.value = 4.0;
+    masterLpf.connect(out);
+    
+    freqs.forEach((f, i) => {
+      const startTime = t + i * noteDur;
+      const osc = audioCtx.createOscillator(), gain = audioCtx.createGain();
+      
+      osc.type = 'square';
+      osc.frequency.value = f;
+      
+      gain.gain.setValueAtTime(0, startTime);
+      gain.gain.linearRampToValueAtTime(0.08, startTime + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.3); // chord wash ring-out
+      
+      osc.connect(gain); gain.connect(masterLpf);
+      osc.start(startTime); osc.stop(startTime + 0.3);
     });
   }
-  function startMusic() { /* disabled */ }
-  function stopMusic() { }
+  var bgmAudioEl, bgmSource;
+  function startMusic() {
+    ensureAudio();
+    if (!bgmAudioEl) {
+      bgmAudioEl = new Audio('bgm.ogg');
+      bgmAudioEl.loop = true;
+      bgmAudioEl.volume = 0.5;
+      
+      // 当通过双击本地文件运行 (file://) 时，浏览器的 CORS 安全策略会阻止关联 Web Audio API (会输出无声)
+      // 因此只有在通过 HTTP 服务器访问时，才将背景音乐接入滤波特效流
+      if (window.location.protocol !== 'file:') {
+        try {
+          bgmSource = audioCtx.createMediaElementSource(bgmAudioEl);
+          bgmSource.connect(getMasterOut());
+        } catch (e) {
+          console.warn('AudioContext routing failed:', e);
+        }
+      }
+    }
+    bgmAudioEl.play().catch(e => console.warn('BGM play failed:', e));
+  }
+  function stopMusic() { 
+    if (bgmAudioEl) {
+      bgmAudioEl.pause();
+      bgmAudioEl.currentTime = 0;
+    }
+  }
 
   // ─── HIT-STOP AUDIO: Underwater LPF cut + release burst ───
   function engageHitStopAudio() {
@@ -978,16 +1078,32 @@ canvas { display: block; width: 100%; height: 100%; }
     playHitStopRelease();
   }
   function playHitStopRelease() {
-    const buf = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.06, audioCtx.sampleRate);
+    const t = audioCtx.currentTime;
+    
+    // Sub impact punch
+    const sub = audioCtx.createOscillator(), subG = audioCtx.createGain();
+    sub.type = 'sine';
+    sub.frequency.setValueAtTime(100, t);
+    sub.frequency.exponentialRampToValueAtTime(30, t + 0.2);
+    subG.gain.setValueAtTime(0.25, t);
+    subG.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+    sub.connect(subG); subG.connect(audioCtx.destination);
+    sub.start(t); sub.stop(t + 0.2);
+    
+    // Sharp high-pass synth burst
+    const buf = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.15, audioCtx.sampleRate);
     const d = buf.getChannelData(0);
-    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length) * 0.8;
-    const src = audioCtx.createBufferSource(), g = audioCtx.createGain();
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1);
+    const src = audioCtx.createBufferSource(), lpf = audioCtx.createBiquadFilter(), g = audioCtx.createGain();
     src.buffer = buf;
-    g.gain.setValueAtTime(0.18, audioCtx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.06);
-    // Connect directly to destination to bypass the filter for the burst
-    src.connect(g); g.connect(audioCtx.destination);
-    src.start(); src.stop(audioCtx.currentTime + 0.06);
+    lpf.type = 'bandpass';
+    lpf.frequency.setValueAtTime(4000, t);
+    lpf.frequency.exponentialRampToValueAtTime(300, t + 0.15);
+    lpf.Q.value = 1.5;
+    g.gain.setValueAtTime(0.3, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+    src.connect(lpf); lpf.connect(g); g.connect(audioCtx.destination);
+    src.start(t);
   }
 
   // ─── DOM ───
@@ -1629,6 +1745,7 @@ canvas { display: block; width: 100%; height: 100%; }
     combo = 1; comboTimer = 0; comboEl.textContent = 'x1';
     if (lives <= 0) {
       gameActive = false;
+      stopMusic();
       finalScoreE.textContent = score;
       statLineEl.textContent = '击毁目标: ' + kills + ' \u2022 波次: ' + wave + ' \u2022 最高连击: x' + maxCombo;
       gameOverScr.classList.add('visible');
@@ -2170,6 +2287,7 @@ canvas { display: block; width: 100%; height: 100%; }
     resetState();
     for (let i = 0; i < 3; i++) spawnObstacle();
     gameActive = true;
+    startMusic();
   }
   function resetState() {
     balls.forEach(b => releaseBullet(b));

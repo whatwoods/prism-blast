@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -13,7 +13,7 @@
   --neon-cyan: #00f0ff;
   --neon-magenta: #ff00aa;
   --neon-yellow: #ffe600;
-  --bg-dark: #06060e;
+  --bg-dark: #020204;
 }
 
 html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg-dark); cursor: default; }
@@ -652,83 +652,89 @@ canvas { display: block; width: 100%; height: 100%; }
     'varying vec2 vUv;',
     'varying vec3 vWorldPos;',
     '',
+    '// 高级色彩映射',
     'vec3 hsv2rgb(vec3 c) {',
     '  vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);',
     '  vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);',
     '  return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);',
     '}',
     '',
+    '// 3D 噪波与分形布朗运动 (FBM) 用于流体能量',
     'float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }',
+    'float noise(vec2 p) {',
+    '  vec2 i = floor(p), f = fract(p);',
+    '  vec2 u = f*f*(3.0-2.0*f);',
+    '  return mix(mix(hash(i+vec2(0.0,0.0)), hash(i+vec2(1.0,0.0)), u.x),',
+    '             mix(hash(i+vec2(0.0,1.0)), hash(i+vec2(1.0,1.0)), u.x), u.y);',
+    '}',
+    'float fbm(vec2 p) {',
+    '  float f = 0.0, amp = 0.5;',
+    '  for(int i=0; i<4; i++) { f += amp*noise(p); p *= 2.0; amp *= 0.5; }',
+    '  return f;',
+    '}',
     '',
-    '// Grid drawing helper',
-    'float drawGrid(vec2 uv, float timeOffset, float lineW) {',
-    '  float u = uv.x * 48.0;',
-    '  float v = uv.y * 96.0 + timeOffset;',
-    '  vec2 hexUV = vec2(u, v * 0.5);',
-    '  vec2 fracA = fract(hexUV) - 0.5;',
-    '  vec2 fracB = fract(hexUV + 0.5) - 0.5;',
-    '  float dA = max(abs(fracA.x), abs(fracA.y));',
-    '  float dB = max(abs(fracB.x), abs(fracB.y));',
-    '  float d = min(dA, dB);',
-    '  return 1.0 - smoothstep(0.42 - lineW, 0.42, d);',
+    '// 六边形网格生成器',
+    'float hex(vec2 p) {',
+    '  p.x *= 0.57735*2.0;',
+    '  p.y += mod(floor(p.x), 2.0)*0.5;',
+    '  p = abs((mod(p, 1.0) - 0.5));',
+    '  return abs(max(p.x*1.5 + p.y, p.y*2.0) - 1.0);',
     '}',
     '',
     'void main() {',
     '  vec2 uv = vUv;',
-    '  // View vector for fake parallax',
     '  vec3 viewDir = normalize(cameraPosition - vWorldPos);',
-    '  vec2 parallaxOffset = viewDir.xy * 0.015;',
     '',
-    '  // Glitch tear',
-    '  float glitchCycle = pow(sin(u_time * 0.7) * 0.5 + 0.5, 8.0);',
-    '  float tearOffset = 0.0;',
-    '  if (hash(vec2(floor(uv.y * 80.0), floor(u_time * 12.0))) > 0.97 && glitchCycle > 0.2) {',
-    '    tearOffset = (hash(vec2(uv.y, u_time)) - 0.5) * 0.04 * glitchCycle;',
-    '  }',
-    '  uv.x += tearOffset + u_pulse * 0.01 * sin(uv.y * 200.0 + u_time * 50.0);',
+    '  // 空间扭曲与视差',
+    '  float depth = 1.0 - uv.y; // uv.y 从 1(近) 到 0(远)',
+    '  vec2 paraUv = uv + viewDir.xy * 0.05 * depth;',
     '',
-    '  // --- 1. Parallax dual-layer grid ---',
-    '  float timeBase = u_time * 8.0;',
-    '  float lineW = 0.02 + u_pulse * 0.015;',
-    '  // Background layer (dim, offset)',
-    '  float gridBg = drawGrid(uv + parallaxOffset, timeBase * 0.8, lineW * 1.5) * 0.3;',
-    '  // Foreground layer (bright)',
-    '  float gridFg = drawGrid(uv, timeBase, lineW);',
-    '  float gridTotal = max(gridFg, gridBg);',
+    '  // 1. 底层能量流（深邃星云感）',
+    '  vec2 fluidUv = vec2(uv.x * 3.0, uv.y * 10.0 - u_time * 0.5);',
+    '  float energy = fbm(fluidUv) * fbm(fluidUv + vec2(u_time * 0.2, 0.0));',
+    '  ',
+    '  // 2. 表层科幻六边形面板 (全息玻璃感) - 柱面UV无缝修复+结构完整性保护',
+    '  float hexTileX = 1.0 / (0.57735 * 2.0); // 六边形x方向周期',
+    '  float xScale = 80.0;',
+    '  float adjustedXScale = floor(xScale * hexTileX) / hexTileX; // 整数倍周期，保证圆周拼接',
+    '  vec2 hexUv = vec2(paraUv.x * adjustedXScale, paraUv.y * 160.0);',
+    '  hexUv.x = mod(hexUv.x, adjustedXScale); // x轴模运算，消除接缝',
+    '  float hexValue = hex(hexUv);',
+    '  float hexOutline = smoothstep(0.04, 0.0, hexValue); // 边框',
+    '  float hexFill = smoothstep(0.4, 0.3, hexValue); // 填充，消除空隙',
+    '  float hexPulse = sin(paraUv.y * 50.0 - u_time * 10.0) * 0.5 + 0.5;',
+    '  // 面板基础可见度固定，不再受噪波影响，保证结构完整无破损',
+    '  float hexGrid = (hexOutline * 0.8 + hexFill * 0.15) * (0.4 + 0.6 * hexPulse);',
     '',
-    '  // --- 2. Speed leading lines (enhanced longitudinal streaks) ---',
-    '  float lonLine = 1.0 - smoothstep(0.01, 0.025, abs(fract(uv.x * 16.0) - 0.5) - 0.47);',
-    '  // Floor zone accelerated guide lines',
-    '  float floorMask = smoothstep(0.3, 0.0, abs(uv.x - 0.5));',
-    '  float speedLines = (1.0 - smoothstep(0.0, 0.05, abs(fract(uv.x * 32.0) - 0.5) - 0.48)) * floorMask;',
-    '  float speedDash = fract(uv.y * 20.0 + u_time * 40.0);',
-    '  speedLines *= smoothstep(0.0, 0.2, speedDash) * smoothstep(1.0, 0.8, speedDash) * 1.5;',
+    '  // 3. 速度引导线 (极简光柱)',
+    '  float speedLine = pow(sin(paraUv.x * 3.14159 * 16.0), 32.0);',
+    '  float speedDash = noise(vec2(paraUv.x * 100.0, paraUv.y * 5.0 - u_time * 20.0));',
+    '  speedLine *= smoothstep(0.6, 0.9, speedDash) * 2.0;',
     '',
-    '  // Composite all lines',
-    '  float lines = max(gridTotal * 0.6, max(lonLine * 0.2, speedLines));',
-    '  float vertGlow = gridTotal * (sin(uv.x * 48.0 * 3.14159 + u_time * 4.0) * 0.5 + 0.5) * 0.3;',
+    '  // 色彩合成 - 能量仅影响亮度，不破坏面板结构',
+    '  float baseHue = 0.55 + u_hueShift + (energy * 0.1);',
+    '  vec3 fluidCol = hsv2rgb(vec3(baseHue, 0.8, energy * 0.5));',
+    '  // 网格亮度由能量动态调制，但保证最低可见度',
+    '  vec3 gridCol = hsv2rgb(vec3(baseHue - 0.05, 0.5, hexGrid * (0.7 + 0.8 * energy)));',
+    '  vec3 lineCol = vec3(0.8, 0.9, 1.0) * speedLine;',
     '',
-    '  // Color mapping',
-    '  float hue = 0.50 + u_hueShift + sin(uv.y * 2.0 + u_time) * 0.03;',
-    '  float val = (lines + vertGlow) * (0.22 + u_pulse * 0.8);',
-    '  float depth = 1.0 - uv.y * 0.7;',
-    '  val *= depth;',
-    '  vec3 col = hsv2rgb(vec3(hue, 0.65, val));',
+    '  vec3 finalCol = fluidCol + gridCol + lineCol;',
+    '  finalCol *= smoothstep(0.0, 0.15, depth); // 远端渐隐融合',
     '',
-    '  // Bullet ripples',
+    '  // 射击波纹反馈叠加',
     '  float rippleTotal = 0.0;',
     '  for (int i = 0; i < 8; i++) {',
     '    if (i >= u_rippleCount) break;',
     '    float dist = distance(vWorldPos, u_ripples[i]);',
-    '    float wave = pow(sin(dist * 12.0 - u_time * 18.0) * 0.5 + 0.5, 2.0);',
-    '    rippleTotal += wave * (1.0 / (1.0 + dist * dist * 0.3)) * smoothstep(8.0, 2.0, dist);',
+    '    float wave = pow(sin(dist * 10.0 - u_time * 20.0) * 0.5 + 0.5, 4.0);',
+    '    rippleTotal += wave * exp(-dist * 0.5);',
     '  }',
-    '  col += vec3(0.3, 0.8, 1.0) * clamp(rippleTotal, 0.0, 1.0) * 0.35;',
+    '  finalCol += vec3(0.2, 0.8, 1.0) * clamp(rippleTotal, 0.0, 1.0) * 1.5;',
     '',
-    '  // Speed line cyan highlight',
-    '  col += vec3(0.0, 0.9, 1.0) * speedLines * depth * 0.8;',
+    '  // 伤害/高潮脉冲叠加',
+    '  finalCol += vec3(1.0, 0.1, 0.3) * u_pulse * hex(hexUv);',
     '',
-    '  gl_FragColor = vec4(col, 1.0);',
+    '  gl_FragColor = vec4(finalCol, 1.0);',
     '}'
   ].join('\n');
 
@@ -1367,7 +1373,7 @@ canvas { display: block; width: 100%; height: 100%; }
   // ─── INIT ───
   function init() {
     scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x06060e, 0.008);
+    scene.fog = new THREE.FogExp2(0x020204, 0.012);
     camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 200);
     camera.position.set(0, 0, 2);
     camera.lookAt(0, 0, -TUNNEL_LENGTH);
@@ -1383,7 +1389,7 @@ canvas { display: block; width: 100%; height: 100%; }
     // ─── POST-PROCESSING: Bloom (tight threshold) + Glitch/Vignette/CA ───
     composer = new EffectComposer(renderer);
     composer.addPass(new RenderPass(scene, camera));
-    bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 1.0, 0.4, 0.88);
+    bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 1.5, 0.6, 0.92);
     composer.addPass(bloomPass);
 
     const glitchShaderDef = {
@@ -1466,10 +1472,9 @@ canvas { display: block; width: 100%; height: 100%; }
   }
 
   function createLights() {
-    scene.add(new THREE.AmbientLight(0x3a4555, 1.0));
-    const p1 = new THREE.PointLight(COL_CYAN, 2.5, 50); p1.position.set(0, 0, 0); scene.add(p1);
-    const p2 = new THREE.PointLight(COL_MAGENTA, 1.8, 70); p2.position.set(0, 0, -40); scene.add(p2);
-    const p3 = new THREE.PointLight(COL_GOLD, 1.2, 60); p3.position.set(0, 0, -80); scene.add(p3);
+    scene.add(new THREE.AmbientLight(0x1a202c, 0.4)); // 降低环境光强度
+    const p1 = new THREE.PointLight(COL_CYAN, 1.5, 30); p1.position.set(0, 0, 0); scene.add(p1);
+    // 移除不必要的深处点光源，避免隧道内出现诡异的反光点
   }
 
   function createStarfield() {

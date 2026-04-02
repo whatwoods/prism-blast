@@ -2288,8 +2288,11 @@ canvas { display: block; width: 100%; height: 100%; }
       let targetFogDensity = 0.008;
       if (lives <= 1) {
         targetFogColor.setHex(0x3a0005);
-        targetFogDensity = 0.015;
-      } else if (combo >= 15) {
+        targetFogDensity = 0.025;
+      } else if (combo >= 20) {
+        targetFogColor.setHex(0x0a0218);
+        targetFogDensity = 0.002;
+      } else if (combo >= 10) {
         targetFogColor.setHex(0x1a0525);
         targetFogDensity = 0.004;
       }

@@ -863,9 +863,7 @@ canvas { display: block; width: 100%; height: 100%; }
     '    col.a = 1.0;',
     '  }',
     '',
-    '  // Vignette',
-    '  float vig = 1.0 - dist * dist * u_vignette;',
-    '  col.rgb *= vig;',
+    '  // Vignette removed — handled by CSS #danger-vignette',
     '',
     '  // Glitch color corruption',
     '  if (u_intensity > 0.1 && rand(vec2(uv.y * 100.0, u_time * 30.0)) > 0.985) {',
@@ -1433,7 +1431,7 @@ canvas { display: block; width: 100%; height: 100%; }
     window.addEventListener('mousedown', onShoot);
     window.addEventListener('mouseup', onMouseUp);
     window.addEventListener('touchstart', onTouchStart, { passive: false });
-    window.addEventListener('touchmove', onTouchMove, { passive: false });
+    window.addEventListener('touchmove', onTouchMove, { passive: true });
     window.addEventListener('touchend', onTouchEnd);
     document.getElementById('start-btn').addEventListener('click', startGame);
     document.getElementById('restart-btn').addEventListener('click', restartGame);
@@ -2295,7 +2293,8 @@ canvas { display: block; width: 100%; height: 100%; }
     } else if (fovPulse > 0) { camera.fov = baseFov; camera.updateProjectionMatrix(); fovPulse = 0; }
 
     // ═══ 4. Post-processing: tight bloom + glitch decay ═══
-    bloomPass.strength = 1.0 + tunnelPulse * 1.5;
+    const targetBloom = 1.0 + tunnelPulse * 1.5;
+    bloomPass.strength += (targetBloom - bloomPass.strength) * dt * 8.0;
 
     // Glitch intensity exponential decay (~0.15s)
     if (glitchIntensity > 0.001) {
@@ -2305,11 +2304,21 @@ canvas { display: block; width: 100%; height: 100%; }
     glitchPass.uniforms.u_intensity.value = glitchIntensity;
     glitchPass.uniforms.u_time.value = globalTime;
 
+    // Skip full-screen glitch pass when no effects are active
+    const hasGlitchEffects = glitchIntensity > 0 ||
+      glitchPass.uniforms.u_aberration.value > 0 ||
+      glitchPass.uniforms.u_dofStrength.value > 0.002;
+    glitchPass.enabled = hasGlitchEffects;
+
     // Chromatic aberration decay
     if (glitchPass.uniforms.u_aberration.value > 0.001) {
       glitchPass.uniforms.u_aberration.value *= Math.pow(0.0001, dt);
       if (glitchPass.uniforms.u_aberration.value < 0.001) glitchPass.uniforms.u_aberration.value = 0;
     }
+
+    // Dynamic DoF — sharpen at high combo, blur at low life
+    const targetDof = lives <= 1 ? 0.03 : (combo >= 10 ? 0.003 : 0.012);
+    glitchPass.uniforms.u_dofStrength.value += (targetDof - glitchPass.uniforms.u_dofStrength.value) * dt * 4.0;
 
     composer.render();
   }
@@ -2335,7 +2344,7 @@ canvas { display: block; width: 100%; height: 100%; }
   }
   function onTouchMove(e) {
     if (!gameActive) return;
-    e.preventDefault(); const t = e.touches[0];
+    const t = e.touches[0];
     mouseNDC.x = (t.clientX / innerWidth) * 2 - 1;
     mouseNDC.y = -(t.clientY / innerHeight) * 2 + 1;
   }

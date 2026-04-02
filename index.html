@@ -402,7 +402,7 @@ canvas { display: block; width: 100%; height: 100%; }
   <div id="combo-panel"><div class="label">连击</div><div class="value" id="combo-val">x1</div></div>
   <div id="lives-panel"></div>
   <div id="powerup-indicator"></div>
-  <div id="ammo-bar"></div>
+  <div id="ammo-bar" style="display:none"></div>
 </div>
 
 <div id="damage-flash"></div>
@@ -1411,7 +1411,6 @@ canvas { display: block; width: 100%; height: 100%; }
     createStarfield();
     createLights();
     createTrajectoryLine();
-    createAmmoUI();
     createLivesUI();
     initBulletPool();
     initObstaclePool();
@@ -1604,10 +1603,7 @@ canvas { display: block; width: 100%; height: 100%; }
 
   // ═══ 3. SHOOTING — No PointLight, with Trail ═══
   function shootBall() {
-    if (ammo <= 0) return;
-    const cost = activePowerup === 'rapid' ? 0.5 : 1;
-    ammo -= cost; if (ammo < 0) ammo = 0;
-    updateAmmoUI(); playShoot();
+    playShoot();
     const dir = getAimDirection(), startPos = new THREE.Vector3(0, 0, 0.5);
     const dirs = [dir];
     if (activePowerup === 'triple') {
@@ -1676,7 +1672,7 @@ canvas { display: block; width: 100%; height: 100%; }
         waveBreakTimer = WAVE_BREAK_DURATION;
         waveKills = 0;
         // Restore resources
-        maxAmmo++; ammo = maxAmmo; createAmmoUI(); updateAmmoUI();
+        maxAmmo++;
         lives = MAX_LIVES; updateLivesUI();
         // Spawn powerup during break
         spawnPowerup();
@@ -2153,11 +2149,6 @@ canvas { display: block; width: 100%; height: 100%; }
 
     checkBallObstacleCollisions();
     if (comboTimer > 0) { comboTimer -= dt; if (comboTimer <= 0) { combo = 1; comboEl.textContent = 'x1'; } }
-    if (ammo < maxAmmo) {
-      const regen = activePowerup === 'rapid' ? AMMO_REGEN_TIME * 0.4 : AMMO_REGEN_TIME;
-      ammoRegenAccum += dt;
-      if (ammoRegenAccum >= regen) { ammo = Math.min(ammo + 1, maxAmmo); ammoRegenAccum = 0; updateAmmoUI(); }
-    }
 
     computeTrajectory();
     updateExplosions(dt);
@@ -2331,7 +2322,7 @@ canvas { display: block; width: 100%; height: 100%; }
     powerups.forEach(p => scene.remove(p.mesh));
     balls = []; obstacles = []; powerups = [];
     score = 0; combo = 1; comboTimer = 0; maxCombo = 1; kills = 0;
-    lives = MAX_LIVES; maxAmmo = BASE_MAX_AMMO; ammo = maxAmmo; ammoRegenAccum = 0;
+    lives = MAX_LIVES; ammoRegenAccum = 0;
     spawnAccum = 0; difficulty = 1; shakeIntensity = 0;
     wave = 1; waveKills = 0; waveThreshold = 8; waveBreakTimer = 0; tunnelPulse = 0; fovPulse = 0;
     glitchIntensity = 0;
@@ -2351,7 +2342,7 @@ canvas { display: block; width: 100%; height: 100%; }
       glitchPass.uniforms.u_intensity.value = 0;
       glitchPass.uniforms.u_aberration.value = 0;
     }
-    updateAmmoUI(); updateLivesUI();
+    updateLivesUI();
     document.body.style.transform = '';
   }
 

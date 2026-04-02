@@ -1391,7 +1391,14 @@ canvas { display: block; width: 100%; height: 100%; }
     document.body.prepend(renderer.domElement);
 
     // ─── POST-PROCESSING: Bloom (tight threshold) + Glitch/Vignette/CA ───
-    composer = new EffectComposer(renderer);
+    // Force UnsignedByteType render target — HalfFloatType (default) causes
+    // black wedge artifacts on many mobile GPUs lacking EXT_color_buffer_half_float
+    const composerRT = new THREE.WebGLRenderTarget(
+      innerWidth * Math.min(devicePixelRatio, 2),
+      innerHeight * Math.min(devicePixelRatio, 2),
+      { type: THREE.UnsignedByteType }
+    );
+    composer = new EffectComposer(renderer, composerRT);
     composer.addPass(new RenderPass(scene, camera));
     bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 1.5, 0.6, 0.92);
     composer.addPass(bloomPass);
@@ -1440,7 +1447,8 @@ canvas { display: block; width: 100%; height: 100%; }
   // ═══ 1. SHADER TUNNEL ═══
   function createTunnel() {
     const geo = new THREE.CylinderGeometry(TUNNEL_RADIUS, TUNNEL_RADIUS, TUNNEL_LENGTH, 64, 40, true);
-    geo.scale(-1, 1, 1);
+    // DON'T use geo.scale(-1,1,1) — negative scale causes rasterization
+    // artifacts on mobile GPUs. Use BackSide instead to view the interior.
     geo.rotateX(Math.PI / 2);
 
     tunnelUniforms = {
@@ -1458,10 +1466,12 @@ canvas { display: block; width: 100%; height: 100%; }
       uniforms: tunnelUniforms,
       vertexShader: TUNNEL_VERT,
       fragmentShader: TUNNEL_FRAG,
-      side: THREE.DoubleSide,
+      side: THREE.BackSide,   // render interior faces (replaces scale(-1,1,1))
+      precision: 'highp',     // force highp on mobile — mediump breaks noise/fbm
     });
 
     tunnelMesh = new THREE.Mesh(geo, mat);
+    tunnelMesh.frustumCulled = false; // camera is inside — prevent false culling
     tunnelMesh.position.z = -TUNNEL_LENGTH / 2 + 2;
     scene.add(tunnelMesh);
 

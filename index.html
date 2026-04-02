@@ -268,23 +268,6 @@ canvas { display: block; width: 100%; height: 100%; }
   #hud .corner.br { bottom: 8px; right: 8px; }
 }
 
-/* ─── CROSSHAIR (disabled) ─── */
-/*
-#crosshair {
-  position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
-  width: 28px; height: 28px; pointer-events: none; z-index: 15;
-}
-#crosshair .ring {
-  width: 100%; height: 100%; border: 1.5px solid rgba(0,240,255,0.6);
-  border-radius: 50%; position: relative;
-}
-#crosshair .ring::before, #crosshair .ring::after {
-  content: ''; position: absolute; background: rgba(0,240,255,0.7);
-}
-#crosshair .ring::before { width: 1px; height: 8px; top: 50%; left: 50%; transform: translate(-50%,-50%); }
-#crosshair .ring::after { width: 8px; height: 1px; top: 50%; left: 50%; transform: translate(-50%,-50%); }
-*/
-
 /* ─── DAMAGE FLASH ─── */
 #damage-flash {
   position: fixed; inset: 0; background: rgba(255,0,60,0.35); pointer-events: none;
@@ -608,7 +591,7 @@ canvas { display: block; width: 100%; height: 100%; }
   let balls = [], obstacles = [], spawnAccum = 0;
   let bulletPool = [], obstaclePool = [];
   let sharedBulletGeo, sharedBulletMat, sharedTrailMat;
-  let trajectoryLine, tunnelMesh, tunnelUniforms, starPoints;
+  let trajectoryLine, tunnelMesh, tunnelUniforms;
   let starLines; // warp star line segments
   let nebulaUniforms; // FBM nebula shader uniforms
   let laserGroup; // volumetric laser beams
@@ -624,7 +607,6 @@ canvas { display: block; width: 100%; height: 100%; }
   let glitchIntensity = 0;
   let globalTime = 0;
   let hitStopTimer = 0;
-  let lastBallDir = new THREE.Vector3(0, 0, -1); // for directional explosions
   let isHolding = false, autoFireAccum = 0; // hold-to-fire state
 
   // ─── DESATURATED COLOR PALETTE ───
@@ -828,7 +810,6 @@ canvas { display: block; width: 100%; height: 100%; }
     'uniform float u_intensity;',
     'uniform float u_aberration;',
     'uniform float u_time;',
-    'uniform float u_vignette;',
     'uniform float u_dofStrength;',
     'varying vec2 vUv;',
     '',
@@ -1417,7 +1398,6 @@ canvas { display: block; width: 100%; height: 100%; }
         u_intensity: { value: 0.0 },
         u_aberration: { value: 0.0 },
         u_time: { value: 0.0 },
-        u_vignette: { value: 0.45 },
         u_dofStrength: { value: 0.012 },
       },
       vertexShader: 'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
@@ -1443,10 +1423,10 @@ canvas { display: block; width: 100%; height: 100%; }
     window.addEventListener('resize', onResize);
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mousedown', onShoot);
-    window.addEventListener('mouseup', onMouseUp);
+    window.addEventListener('mouseup', onPointerUp);
     window.addEventListener('touchstart', onTouchStart, { passive: false });
     window.addEventListener('touchmove', onTouchMove, { passive: true });
-    window.addEventListener('touchend', onTouchEnd);
+    window.addEventListener('touchend', onPointerUp);
     document.getElementById('start-btn').addEventListener('click', startGame);
     document.getElementById('restart-btn').addEventListener('click', restartGame);
     animate();
@@ -1678,7 +1658,6 @@ canvas { display: block; width: 100%; height: 100%; }
   function fireBall(startPos, dir) {
     const entry = acquireBullet(startPos, dir);
     if (!entry) return;
-    lastBallDir.copy(dir);
     balls.push(entry);
   }
 
@@ -2353,31 +2332,28 @@ canvas { display: block; width: 100%; height: 100%; }
     renderer.setSize(innerWidth, innerHeight);
     composer.setSize(innerWidth, innerHeight);
   }
-  function onMouseMove(e) {
-    mouseNDC.x = (e.clientX / innerWidth) * 2 - 1;
-    mouseNDC.y = -(e.clientY / innerHeight) * 2 + 1;
+  function updateNDC(cx, cy) {
+    mouseNDC.x = (cx / innerWidth) * 2 - 1;
+    mouseNDC.y = -(cy / innerHeight) * 2 + 1;
   }
+  function onMouseMove(e) { updateNDC(e.clientX, e.clientY); }
   function onTouchStart(e) {
     if (!gameActive) return;
     e.preventDefault(); const t = e.touches[0];
-    mouseNDC.x = (t.clientX / innerWidth) * 2 - 1;
-    mouseNDC.y = -(t.clientY / innerHeight) * 2 + 1;
+    updateNDC(t.clientX, t.clientY);
     isHolding = true; autoFireAccum = 0;
-    shootBall(); // fire immediately on first touch
+    shootBall();
   }
   function onTouchMove(e) {
     if (!gameActive) return;
-    const t = e.touches[0];
-    mouseNDC.x = (t.clientX / innerWidth) * 2 - 1;
-    mouseNDC.y = -(t.clientY / innerHeight) * 2 + 1;
+    updateNDC(e.touches[0].clientX, e.touches[0].clientY);
   }
   function onShoot() {
     if (!gameActive) return;
     isHolding = true; autoFireAccum = 0;
-    shootBall(); // fire immediately on click
+    shootBall();
   }
-  function onMouseUp() { isHolding = false; autoFireAccum = 0; }
-  function onTouchEnd() { isHolding = false; autoFireAccum = 0; }
+  function onPointerUp() { isHolding = false; autoFireAccum = 0; }
 
   function startGame() {
     titleScreen.classList.remove('visible');

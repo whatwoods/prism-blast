@@ -712,16 +712,16 @@ canvas { display: block; width: 100%; height: 100%; }
     '  float ao = smoothstep(0.0, 0.08, h);',
     '  ',
     '  // 确保基础网格始终可见',
-    '  float hexGrid = hexOutline * 1.5 + hexFill * 0.3;',
-    '  float gridGlow = pow(hexOutline, 2.0) * 0.5;',
+    '  float hexGrid = hexOutline * 0.6 + hexFill * 0.1;',
+    '  float gridGlow = pow(hexOutline, 2.0) * 0.15;',
     '',
     '  // 色彩合成 — 饱和度随 combo 动态提升',
     '  float baseHue = 0.55 + u_hueShift + (energy * 0.1);',
     '  float comboNorm = clamp(u_combo / 20.0, 0.0, 1.0);',
-    '  float fluidSat = 0.35 + comboNorm * 0.35;',
-    '  float gridSat = 0.25 + comboNorm * 0.25;',
-    '  vec3 fluidCol = hsv2rgb(vec3(baseHue, fluidSat, energy * 0.5)) * ao;',
-    '  vec3 gridCol = hsv2rgb(vec3(baseHue - 0.05, gridSat, (hexGrid + gridGlow) * 0.8 * hexBevel));',
+    '  float fluidSat = 0.15 + comboNorm * 0.15;',
+    '  float gridSat = 0.10 + comboNorm * 0.10;',
+    '  vec3 fluidCol = hsv2rgb(vec3(baseHue, fluidSat, energy * 0.3)) * ao;',
+    '  vec3 gridCol = hsv2rgb(vec3(baseHue - 0.05, gridSat, (hexGrid + gridGlow) * 0.4 * hexBevel));',
     '',
     '  vec3 finalCol = fluidCol + gridCol;',
     '  finalCol *= smoothstep(0.0, 0.02, depth); // 仅极远端微渐隐',
@@ -740,7 +740,7 @@ canvas { display: block; width: 100%; height: 100%; }
     '  finalCol += vec3(1.0, 0.1, 0.3) * u_pulse * hex(hexUv);',
     '',
     '  // 网格边缘微发光，参与 bloom',
-    '  finalCol += vec3(0.15, 0.4, 0.45) * hexOutline * 0.2 * (1.0 + comboNorm);',
+    '  finalCol += vec3(0.15, 0.4, 0.45) * hexOutline * 0.06 * (1.0 + comboNorm * 0.3);',
     '  gl_FragColor = vec4(finalCol, 1.0);',
     '}'
   ].join('\n');
@@ -1481,7 +1481,7 @@ canvas { display: block; width: 100%; height: 100%; }
     // Structural ring accents (stored for movement)
     const ringGeo = new THREE.TorusGeometry(TUNNEL_RADIUS - 0.02, 0.08, 12, 64);
     const ringMat = new THREE.MeshBasicMaterial({
-      color: COL_CYAN, transparent: true, opacity: 0.40,
+      color: COL_CYAN, transparent: true, opacity: 0.12,
       blending: THREE.AdditiveBlending, depthWrite: false
     });
     for (let z = 0; z > -TUNNEL_LENGTH; z -= 10) {

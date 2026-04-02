@@ -612,6 +612,7 @@ canvas { display: block; width: 100%; height: 100%; }
   let starLines; // warp star line segments
   let nebulaUniforms; // FBM nebula shader uniforms
   let laserGroup; // volumetric laser beams
+  let tunnelRings = []; // structural rings for movement
   let difficulty = 1, shakeIntensity = 0;
   let wave = 1, waveKills = 0, waveThreshold = 8;
   let waveBreakTimer = 0;
@@ -634,6 +635,7 @@ canvas { display: block; width: 100%; height: 100%; }
 
   // ─── GLSL: Tunnel Shader ───
   const TUNNEL_VERT = [
+    'uniform float u_time;',
     'varying vec2 vUv;',
     'varying vec3 vWorldPos;',
     'void main() {',
@@ -669,7 +671,7 @@ canvas { display: block; width: 100%; height: 100%; }
     '}',
     'float fbm(vec2 p) {',
     '  float f = 0.0, amp = 0.5;',
-    '  for(int i=0; i<4; i++) { f += amp*noise(p); p *= 2.0; amp *= 0.5; }',
+    '  for(int i=0; i<2; i++) { f += amp*noise(p); p *= 2.0; amp *= 0.5; }',
     '  return f;',
     '}',
     '',
@@ -684,30 +686,37 @@ canvas { display: block; width: 100%; height: 100%; }
     'void main() {',
     '  vec2 uv = vUv;',
     '',
+    '  // 隧道前进滚动 — 六边形网格随时间向玩家方向移动',
+    '  float scrollSpeed = 0.04;',
+    '  float scrollY = uv.y - u_time * scrollSpeed;',
+    '',
     '  float depth = 1.0 - uv.y;',
     '',
     '  // 1. 底层能量流（深邃星云感）',
-    '  vec2 fluidUv = vec2(uv.x * 3.0, uv.y * 10.0 - u_time * 0.5);',
+    '  vec2 fluidUv = vec2(uv.x * 3.0, scrollY * 10.0 - u_time * 0.5);',
     '  float energy = fbm(fluidUv) * 0.7 + fbm(fluidUv + vec2(u_time * 0.2, 0.0)) * 0.3;',
-    '  energy = max(energy, 0.15);',  // minimum floor — never fully black
+    '  energy = max(energy, 0.15);',
     '  ',
     '  // 2. 表层科幻六边形面板 (强制闭合结构)',
     '  // 51.9615242 = 60 * 0.8660254, 让 60 个六边形在圆周完美拼接',
-    '  vec2 hexUv = vec2(uv.x * 51.9615242, uv.y * 120.0);',
+    '  vec2 hexUv = vec2(uv.x * 51.9615242, scrollY * 120.0);',
     '  ',
     '  // 调用六边形函数',
     '  float h = hex(hexUv);',
     '  float hexOutline = smoothstep(0.06, 0.0, h);',
     '  float hexFill = smoothstep(0.4, 0.35, h);',
     '  ',
+    '  // 伪倒角 (Bevel) 与环境光遮蔽 (AO)',
+    '  float hexBevel = smoothstep(0.0, 0.15, h);',
+    '  float ao = smoothstep(0.0, 0.08, h);',
+    '  ',
     '  // 确保基础网格始终可见',
     '  float hexGrid = hexOutline * 1.0 + hexFill * 0.1;',
     '',
-    '  // 色彩合成 - 能量仅影响亮度，不破坏面板结构',
+    '  // 色彩合成',
     '  float baseHue = 0.55 + u_hueShift + (energy * 0.1);',
-    '  vec3 fluidCol = hsv2rgb(vec3(baseHue, 0.35, energy * 0.5));',
-    '  // 网格亮度由能量动态调制，但保证最低可见度',
-    '  vec3 gridCol = hsv2rgb(vec3(baseHue - 0.05, 0.25, hexGrid * 0.8));',
+    '  vec3 fluidCol = hsv2rgb(vec3(baseHue, 0.35, energy * 0.5)) * ao;',
+    '  vec3 gridCol = hsv2rgb(vec3(baseHue - 0.05, 0.25, hexGrid * 0.8 * hexBevel));',
     '',
     '  vec3 finalCol = fluidCol + gridCol;',
     '  finalCol *= smoothstep(0.0, 0.02, depth); // 仅极远端微渐隐',
@@ -1462,13 +1471,14 @@ canvas { display: block; width: 100%; height: 100%; }
     tunnelMesh.position.z = -TUNNEL_LENGTH / 2 + 2;
     scene.add(tunnelMesh);
 
-    // Structural ring accents
+    // Structural ring accents (stored for movement)
     const ringGeo = new THREE.TorusGeometry(TUNNEL_RADIUS - 0.02, 0.04, 8, 64);
     const ringMat = new THREE.MeshBasicMaterial({ color: COL_CYAN, transparent: true, opacity: 0.10 });
     for (let z = 0; z > -TUNNEL_LENGTH; z -= 10) {
       const ring = new THREE.Mesh(ringGeo, ringMat);
       ring.position.z = z;
       scene.add(ring);
+      tunnelRings.push(ring);
     }
   }
 
@@ -2067,6 +2077,12 @@ canvas { display: block; width: 100%; height: 100%; }
         sp.needsUpdate = true;
       }
       if (laserGroup) laserGroup.rotation.z += dt * 0.3;
+      // Tunnel rotation + ring movement on title screen too
+      if (tunnelMesh) tunnelMesh.rotation.z += dt * 0.2;
+      for (let ri = 0; ri < tunnelRings.length; ri++) {
+        tunnelRings[ri].position.z += dt * 20;
+        if (tunnelRings[ri].position.z > 5) tunnelRings[ri].position.z -= TUNNEL_LENGTH;
+      }
       composer.render();
       return;
     }
@@ -2197,6 +2213,22 @@ canvas { display: block; width: 100%; height: 100%; }
     if (tunnelUniforms.u_hueShift.value > 0.001) {
       tunnelUniforms.u_hueShift.value *= Math.pow(0.05, dt);
       if (tunnelUniforms.u_hueShift.value < 0.001) tunnelUniforms.u_hueShift.value = 0;
+    }
+
+    // Camera banking (roll based on aim X)
+    const targetRoll = mouseNDC.x * -0.35;
+    camera.rotation.z += (targetRoll - camera.rotation.z) * dt * 5.0;
+
+    // Tunnel slow self-rotation
+    tunnelMesh.rotation.z += dt * 0.2;
+
+    // Structural rings fly toward camera
+    for (let ri = 0; ri < tunnelRings.length; ri++) {
+      const ring = tunnelRings[ri];
+      ring.position.z += dt * BALL_SPEED * 0.8;
+      if (ring.position.z > 5) {
+        ring.position.z -= TUNNEL_LENGTH;
+      }
     }
 
     // Starfield warp lines scroll (speed increases with combo)
@@ -2343,7 +2375,7 @@ canvas { display: block; width: 100%; height: 100%; }
     glitchIntensity = 0;
     hitStopTimer = 0;
     isHolding = false; autoFireAccum = 0;
-    camera.fov = baseFov; camera.updateProjectionMatrix();
+    camera.fov = baseFov; camera.rotation.z = 0; camera.updateProjectionMatrix();
     activePowerup = null; powerupTimer = 0; shield = 0;
     // Reset fog
     if (scene.fog) { scene.fog.density = 0.008; scene.fog.color.setHex(0x06060e); }

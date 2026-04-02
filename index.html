@@ -740,7 +740,7 @@ canvas { display: block; width: 100%; height: 100%; }
     '  finalCol += vec3(1.0, 0.1, 0.3) * u_pulse * hex(hexUv);',
     '',
     '  // 网格边缘微发光，参与 bloom',
-    '  finalCol += vec3(0.15, 0.4, 0.45) * hexOutline * 0.12 * (1.0 + comboNorm * 0.5);',
+    '  finalCol += vec3(0.15, 0.4, 0.45) * hexOutline * 0.07 * (1.0 + comboNorm * 0.4);',
     '  gl_FragColor = vec4(finalCol, 1.0);',
     '}'
   ].join('\n');
@@ -1481,7 +1481,7 @@ canvas { display: block; width: 100%; height: 100%; }
     // Structural ring accents (stored for movement)
     const ringGeo = new THREE.TorusGeometry(TUNNEL_RADIUS - 0.02, 0.08, 12, 64);
     const ringMat = new THREE.MeshBasicMaterial({
-      color: COL_CYAN, transparent: true, opacity: 0.22,
+      color: COL_CYAN, transparent: true, opacity: 0.14,
       blending: THREE.AdditiveBlending, depthWrite: false
     });
     for (let z = 0; z > -TUNNEL_LENGTH; z -= 10) {

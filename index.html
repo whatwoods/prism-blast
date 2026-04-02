@@ -1479,8 +1479,11 @@ canvas { display: block; width: 100%; height: 100%; }
     scene.add(tunnelMesh);
 
     // Structural ring accents (stored for movement)
-    const ringGeo = new THREE.TorusGeometry(TUNNEL_RADIUS - 0.02, 0.04, 8, 64);
-    const ringMat = new THREE.MeshBasicMaterial({ color: COL_CYAN, transparent: true, opacity: 0.10 });
+    const ringGeo = new THREE.TorusGeometry(TUNNEL_RADIUS - 0.02, 0.08, 12, 64);
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: COL_CYAN, transparent: true, opacity: 0.40,
+      blending: THREE.AdditiveBlending, depthWrite: false
+    });
     for (let z = 0; z > -TUNNEL_LENGTH; z -= 10) {
       const ring = new THREE.Mesh(ringGeo, ringMat);
       ring.position.z = z;

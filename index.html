@@ -1589,7 +1589,9 @@ canvas { display: block; width: 100%; height: 100%; }
       const angle = (Math.PI / 3) * i;
       const r = TUNNEL_RADIUS - 0.05;
       laser.position.set(Math.cos(angle) * r, Math.sin(angle) * r, -TUNNEL_LENGTH * 0.4);
-      laser.lookAt(0, 0, -TUNNEL_LENGTH * 0.4);
+      // Align beam along tunnel wall (tangent) instead of pointing at center
+      laser.rotation.z = angle;
+      laser.rotation.x = Math.PI / 2;
       laserGroup.add(laser);
     }
     scene.add(laserGroup);

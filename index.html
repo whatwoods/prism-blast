@@ -602,6 +602,10 @@ canvas { display: block; width: 100%; height: 100%; }
   let tunnelPulse = 0, fovPulse = 0, baseFov = 45;
   let powerups = [], activePowerup = null, powerupTimer = 0;
   let shield = 0;
+  // Boss system
+  let boss = null, bossActive = false;
+  let extraBalls = 0; // permanent reward: extra balls per shot
+  let fireRateBonus = 0; // permanent reward: fire rate reduction
   let musicStarted = false, musicGain = null, musicOscillators = [];
   let glitchIntensity = 0;
   let globalTime = 0;
@@ -1609,11 +1613,21 @@ canvas { display: block; width: 100%; height: 100%; }
     playShoot();
     const dir = getAimDirection(), startPos = new THREE.Vector3(0, 0, 0.5);
     const dirs = [dir];
+    // Triple powerup
     if (activePowerup === 'triple') {
       const spread = 0.08;
       const right = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0,1,0)).normalize();
       dirs.push(dir.clone().addScaledVector(right, spread).normalize());
       dirs.push(dir.clone().addScaledVector(right, -spread).normalize());
+    }
+    // Permanent extra balls from boss rewards
+    for (let i = 0; i < extraBalls; i++) {
+      const spread = 0.05 * (i + 1);
+      const up = new THREE.Vector3(0, 1, 0);
+      const right = new THREE.Vector3().crossVectors(dir, up).normalize();
+      const angle = (Math.PI * 2 / (extraBalls + 1)) * (i + 1);
+      const offset = right.clone().multiplyScalar(Math.cos(angle) * spread).add(up.clone().multiplyScalar(Math.sin(angle) * spread));
+      dirs.push(dir.clone().add(offset).normalize());
     }
     dirs.forEach(d => fireBall(startPos.clone(), d));
   }
@@ -1727,6 +1741,246 @@ canvas { display: block; width: 100%; height: 100%; }
     const el = document.createElement('div'); el.className = 'bonus-popup';
     el.textContent = text; el.style.left = '50%'; el.style.top = '45%'; el.style.transform = 'translateX(-50%)';
     document.body.appendChild(el); setTimeout(() => el.remove(), 1200);
+  }
+
+  // ═══ BOSS SYSTEM ═══
+  function spawnBoss(bossLevel) {
+    const bossHP = 10 + bossLevel * 5;
+    const weakPointCount = 3 + Math.min(bossLevel, 4);
+    const bossSize = 2.5 + bossLevel * 0.3;
+    const bossSpeed = 2.0 + bossLevel * 0.3;
+
+    const group = new THREE.Group();
+
+    // Core body — large dodecahedron
+    const coreGeo = new THREE.DodecahedronGeometry(bossSize, 1);
+    const coreMat = new THREE.MeshStandardMaterial({
+      color: 0x220033, emissive: 0x440066, emissiveIntensity: 0.5,
+      metalness: 0.9, roughness: 0.3, transparent: true, opacity: 0.85,
+      wireframe: false
+    });
+    const coreMesh = new THREE.Mesh(coreGeo, coreMat);
+    group.add(coreMesh);
+
+    // Wireframe shell
+    const shellMat = new THREE.MeshBasicMaterial({
+      color: 0x8800ff, wireframe: true, transparent: true, opacity: 0.3,
+      blending: THREE.AdditiveBlending
+    });
+    const shellMesh = new THREE.Mesh(new THREE.DodecahedronGeometry(bossSize * 1.05, 1), shellMat);
+    group.add(shellMesh);
+
+    // Weak points — small glowing spheres on surface
+    const weakPoints = [];
+    for (let i = 0; i < weakPointCount; i++) {
+      const phi = Math.acos(1 - 2 * (i + 0.5) / weakPointCount);
+      const theta = Math.PI * (1 + Math.sqrt(5)) * i;
+      const wpGeo = new THREE.SphereGeometry(0.3 + bossLevel * 0.02, 12, 12);
+      const wpMat = new THREE.MeshStandardMaterial({
+        color: 0xff0066, emissive: 0xff0066, emissiveIntensity: 2.0,
+        metalness: 0.5, roughness: 0.2
+      });
+      const wpMesh = new THREE.Mesh(wpGeo, wpMat);
+      const r = bossSize * 0.95;
+      wpMesh.position.set(
+        r * Math.sin(phi) * Math.cos(theta),
+        r * Math.sin(phi) * Math.sin(theta),
+        r * Math.cos(phi)
+      );
+      wpMesh.userData = { alive: true, hp: Math.ceil(bossHP / weakPointCount) };
+      group.add(wpMesh);
+      weakPoints.push(wpMesh);
+    }
+
+    group.position.z = -TUNNEL_LENGTH + 5;
+    scene.add(group);
+
+    boss = {
+      group, coreMesh, coreMat, shellMat, shellMesh, weakPoints,
+      hp: bossHP, maxHp: bossHP, level: bossLevel,
+      size: bossSize, speed: bossSpeed,
+      phase: 'approach', // approach → fight → dying
+      phaseTimer: 0,
+      exposeCycle: 0, // alternates between shielded and exposed
+      exposeTimer: 0,
+      exposed: true, // start exposed
+      attackTimer: 2.0,
+      attackInterval: Math.max(1.0, 3.0 - bossLevel * 0.3),
+      targetZ: -30 - bossLevel * 2, // where boss stops
+      rotSpeed: 0.5 + bossLevel * 0.1,
+    };
+    bossActive = true;
+    announceWave('BOSS');
+    spawnBonusPopup('⚠ BOSS 出现 ⚠');
+  }
+
+  function updateBoss(dt) {
+    if (!boss) return;
+    const b = boss;
+
+    // Rotation
+    b.coreMesh.rotation.x += dt * b.rotSpeed * 0.7;
+    b.coreMesh.rotation.y += dt * b.rotSpeed;
+    b.shellMesh.rotation.x -= dt * b.rotSpeed * 0.3;
+    b.shellMesh.rotation.z += dt * b.rotSpeed * 0.5;
+
+    // Weak point pulse
+    b.weakPoints.forEach(wp => {
+      if (!wp.userData.alive) return;
+      const pulse = b.exposed ? 2.0 + Math.sin(globalTime * 8) * 1.0 : 0.3;
+      wp.material.emissiveIntensity = pulse;
+      wp.material.color.setHex(b.exposed ? 0xff0066 : 0x330022);
+      wp.material.emissive.setHex(b.exposed ? 0xff0066 : 0x330022);
+    });
+
+    if (b.phase === 'approach') {
+      b.group.position.z += b.speed * dt;
+      if (b.group.position.z >= b.targetZ) {
+        b.group.position.z = b.targetZ;
+        b.phase = 'fight';
+        b.exposeTimer = 4.0;
+        b.exposed = true;
+      }
+    } else if (b.phase === 'fight') {
+      // Expose/shield cycle
+      b.exposeTimer -= dt;
+      if (b.exposeTimer <= 0) {
+        b.exposed = !b.exposed;
+        b.exposeTimer = b.exposed ? (3.5 - b.level * 0.2) : (2.0 + b.level * 0.3);
+        b.exposeCycle++;
+        // Shell visual feedback
+        b.shellMat.color.setHex(b.exposed ? 0x8800ff : 0xff4400);
+        b.shellMat.opacity = b.exposed ? 0.3 : 0.6;
+        b.coreMat.emissive.setHex(b.exposed ? 0x440066 : 0x661100);
+      }
+
+      // Boss attacks — spawn obstacles from boss position
+      b.attackTimer -= dt;
+      if (b.attackTimer <= 0 && !b.exposed) {
+        b.attackTimer = b.attackInterval;
+        bossAttack(b);
+      }
+
+      // Slow bob
+      b.group.position.z = b.targetZ + Math.sin(globalTime * 0.8) * 1.5;
+    } else if (b.phase === 'dying') {
+      b.phaseTimer -= dt;
+      b.coreMat.opacity = Math.max(0, b.phaseTimer / 1.5);
+      b.shellMat.opacity = Math.max(0, b.phaseTimer / 1.5) * 0.3;
+      b.group.scale.setScalar(1 + (1.5 - b.phaseTimer) * 0.5);
+      if (b.phaseTimer <= 0) {
+        destroyBoss();
+      }
+    }
+  }
+
+  function bossAttack(b) {
+    // Spawn a ring of small obstacles from boss position
+    const count = 3 + b.level;
+    for (let i = 0; i < count; i++) {
+      const angle = (Math.PI * 2 / count) * i + Math.random() * 0.3;
+      const r = 1.5 + Math.random() * 2.0;
+      spawnObstacleAt(
+        Math.cos(angle) * r + b.group.position.x,
+        Math.sin(angle) * r + b.group.position.y,
+        b.group.position.z - 2
+      );
+    }
+  }
+
+  function spawnObstacleAt(px, py, pz) {
+    const size = 0.5 + Math.random() * 0.4;
+    const color = new THREE.Color().setHSL(Math.random(), 0.65, 0.5);
+    const emissive = new THREE.Color().setHSL(Math.random(), 0.75, 0.35);
+    const speed = OBSTACLE_SPEED + difficulty * 0.045;
+    const entry = acquireObstacle(px, py, pz, size, 1, color, emissive, speed);
+    if (!entry) return;
+    obstacles.push({ mesh: entry.group, body: entry.body, speed: speed * 1.5, size, hp: 1, maxHp: 1, color: color.clone(), coreMat: entry.coreMat, shellMat: entry.shellMat, _poolEntry: entry });
+  }
+
+  function hitBoss(ballDir) {
+    if (!boss || boss.phase !== 'fight' || !boss.exposed) return false;
+
+    // Check if ball hits a weak point
+    for (const wp of boss.weakPoints) {
+      if (!wp.userData.alive) continue;
+      const worldPos = new THREE.Vector3();
+      wp.getWorldPosition(worldPos);
+      // Check all balls
+      for (const ball of balls) {
+        const bp = ball.body.position;
+        const dx = bp.x - worldPos.x, dy = bp.y - worldPos.y, dz = bp.z - worldPos.z;
+        const dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
+        if (dist < 1.0) {
+          wp.userData.hp--;
+          if (wp.userData.hp <= 0) {
+            wp.userData.alive = false;
+            wp.visible = false;
+            createGPUExplosion(worldPos.clone(), new THREE.Color(0xff0066), 60, ballDir || new THREE.Vector3(0,0,-1));
+          } else {
+            wp.material.emissiveIntensity = 5.0;
+            setTimeout(() => { if (wp.userData.alive) wp.material.emissiveIntensity = 2.0; }, 100);
+          }
+          boss.hp--;
+          shakeIntensity = Math.min(shakeIntensity + 0.2, 0.8);
+          tunnelPulse = 0.2;
+          playHit();
+
+          // Boss defeated?
+          if (boss.hp <= 0) {
+            boss.phase = 'dying';
+            boss.phaseTimer = 1.5;
+            // Big explosion
+            for (let i = 0; i < 5; i++) {
+              setTimeout(() => {
+                if (boss && boss.group) {
+                  const p = boss.group.position.clone().add(new THREE.Vector3((Math.random()-0.5)*3, (Math.random()-0.5)*3, (Math.random()-0.5)*3));
+                  createGPUExplosion(p, new THREE.Color(0xff00ff), 80, new THREE.Vector3(0,0,1));
+                }
+              }, i * 250);
+            }
+          }
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  function destroyBoss() {
+    if (!boss) return;
+    const bossLevel = boss.level;
+
+    // Giant final explosion
+    createGPUExplosion(boss.group.position.clone(), new THREE.Color(0xff00ff), 150, new THREE.Vector3(0,0,1));
+    scene.remove(boss.group);
+
+    // Score reward
+    const bossScore = 5000 * bossLevel;
+    score += bossScore; scoreEl.textContent = score;
+    spawnScorePopup(bossScore);
+
+    // Permanent buff reward — alternate between extra balls and fire rate
+    if (bossLevel % 2 === 1) {
+      extraBalls++;
+      spawnBonusPopup('永久强化: 每发 +1 球');
+    } else {
+      fireRateBonus += 0.02;
+      spawnBonusPopup('永久强化: 射速提升');
+    }
+
+    // Effects
+    glitchIntensity = 1.0;
+    fovPulse = 1.0;
+    shakeIntensity = 0.8;
+    tunnelUniforms.u_hueShift.value += 0.15;
+
+    boss = null;
+    bossActive = false;
+
+    // Resume wave system
+    waveBreakTimer = WAVE_BREAK_DURATION;
+    lives = MAX_LIVES; updateLivesUI();
   }
   function spawnScorePopup(pts) {
     const el = document.createElement('div'); el.className = 'score-popup';
@@ -2055,15 +2309,25 @@ canvas { display: block; width: 100%; height: 100%; }
     }
     difficulty = 1 + score / 5000;
 
-    // Spawn — paused during wave break
-    if (waveBreakTimer > 0) {
+    // Spawn — paused during wave break or boss
+    if (bossActive) {
+      updateBoss(dt);
+      hitBoss();
+    } else if (waveBreakTimer > 0) {
       waveBreakTimer -= dt;
       if (waveBreakTimer <= 0) {
         // Break over — advance to next wave
         waveBreakTimer = 0;
         wave++; waveThreshold = Math.floor(8 + wave * 3);
-        wavePanelEl.textContent = '第 ' + wave + ' 波'; announceWave(wave);
-        for (let i = 0; i < 3; i++) spawnObstacle();
+        // Boss every 10 waves
+        if (wave % 10 === 0) {
+          const bossLevel = wave / 10;
+          spawnBoss(bossLevel);
+          wavePanelEl.textContent = 'BOSS ' + bossLevel;
+        } else {
+          wavePanelEl.textContent = '第 ' + wave + ' 波'; announceWave(wave);
+          for (let i = 0; i < 3; i++) spawnObstacle();
+        }
       }
     } else {
       spawnAccum += dt;
@@ -2074,7 +2338,8 @@ canvas { display: block; width: 100%; height: 100%; }
     // Auto-fire while holding
     if (isHolding) {
       autoFireAccum += dt;
-      const fireRate = activePowerup === 'rapid' ? AUTO_FIRE_INTERVAL * 0.5 : AUTO_FIRE_INTERVAL;
+      const baseRate = activePowerup === 'rapid' ? AUTO_FIRE_INTERVAL * 0.5 : AUTO_FIRE_INTERVAL;
+      const fireRate = Math.max(0.05, baseRate - fireRateBonus);
       while (autoFireAccum >= fireRate) {
         autoFireAccum -= fireRate;
         shootBall();
@@ -2326,6 +2591,9 @@ canvas { display: block; width: 100%; height: 100%; }
     activeDebris.forEach(d => { d.active = false; d.mesh.visible = false; });
     activeDebris = [];
     powerups.forEach(p => scene.remove(p.mesh));
+    // Clean up boss
+    if (boss) { scene.remove(boss.group); boss = null; }
+    bossActive = false; extraBalls = 0; fireRateBonus = 0;
     balls = []; obstacles = []; powerups = [];
     score = 0; combo = 1; comboTimer = 0; maxCombo = 1; kills = 0;
     lives = MAX_LIVES; ammoRegenAccum = 0;

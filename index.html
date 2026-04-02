@@ -1592,7 +1592,7 @@ canvas { display: block; width: 100%; height: 100%; }
     const dist = Math.random() * maxR;
     const px = Math.cos(angle) * dist, py = Math.sin(angle) * dist;
     const pz = -TUNNEL_LENGTH + 5;
-    const hp = (wave >= 5 && Math.random() < 0.25) ? 2 : (wave >= 9 && Math.random() < 0.15) ? 3 : 1;
+    const hp = 1;
     // Desaturated color palette for obstacles
     const hue = hp === 1 ? Math.random() : hp === 2 ? 0.08 : 0.0;
     const color = new THREE.Color().setHSL(hue, 0.65, 0.5);

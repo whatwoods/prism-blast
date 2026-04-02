@@ -651,6 +651,7 @@ canvas { display: block; width: 100%; height: 100%; }
     'uniform float u_hueShift;',
     'uniform vec3 u_ripples[8];',
     'uniform int u_rippleCount;',
+    'uniform float u_scrollSpeed;',
     'varying vec2 vUv;',
     'varying vec3 vWorldPos;',
     '',
@@ -687,8 +688,7 @@ canvas { display: block; width: 100%; height: 100%; }
     '  vec2 uv = vUv;',
     '',
     '  // 隧道前进滚动 — 六边形网格随时间向玩家方向移动',
-    '  float scrollSpeed = 0.04;',
-    '  float scrollY = uv.y - u_time * scrollSpeed;',
+    '  float scrollY = uv.y - u_time * u_scrollSpeed;',
     '',
     '  float depth = 1.0 - uv.y;',
     '',
@@ -1456,6 +1456,7 @@ canvas { display: block; width: 100%; height: 100%; }
         new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()
       ]},
       u_rippleCount: { value: 0 },
+      u_scrollSpeed: { value: 0.04 },
     };
 
     const mat = new THREE.ShaderMaterial({
@@ -2205,6 +2206,9 @@ canvas { display: block; width: 100%; height: 100%; }
 
     // ═══ 1. Tunnel shader uniforms ═══
     tunnelUniforms.u_time.value = globalTime;
+    // Combo accelerates tunnel scroll: base 0.04, up to ~0.2 at high combo
+    const targetScroll = 0.04 + Math.min(combo * 0.008, 0.16);
+    tunnelUniforms.u_scrollSpeed.value += (targetScroll - tunnelUniforms.u_scrollSpeed.value) * dt * 3.0;
     if (tunnelPulse > 0.01) {
       tunnelUniforms.u_pulse.value = tunnelPulse;
       tunnelPulse *= Math.pow(0.001, dt);

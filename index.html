@@ -1588,12 +1588,12 @@ canvas { display: block; width: 100%; height: 100%; }
     ctx.fillRect(0, 0, 64, 256);
     const tex = new THREE.CanvasTexture(canvas);
     tex.premultiplyAlpha = false;
-    const geo = new THREE.PlaneGeometry(1.2, TUNNEL_LENGTH * 0.6);
+    const geo = new THREE.PlaneGeometry(1.8, TUNNEL_LENGTH * 0.6);
     // Place beams ON the tunnel inner wall, not crossing through interior
     for (let i = 0; i < 6; i++) {
       const mat = new THREE.MeshBasicMaterial({
         map: tex, color: COL_CYAN,
-        transparent: true, opacity: 0.12,
+        transparent: true, opacity: 0.30,
         blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false,
         side: THREE.DoubleSide
       });
@@ -2273,7 +2273,7 @@ canvas { display: block; width: 100%; height: 100%; }
       const laserRotSpeed = 0.5 + (combo > 10 ? 1.5 : 0);
       laserGroup.rotation.z += dt * laserRotSpeed;
       const targetColor = combo >= 20 ? COL_GOLD : (combo >= 10 ? COL_MAGENTA : COL_CYAN);
-      const targetOpacity = combo > 5 ? 0.3 : 0.08;
+      const targetOpacity = combo > 5 ? 0.50 : 0.30;
       const tc = new THREE.Color(targetColor);
       for (let li = 0; li < laserGroup.children.length; li++) {
         const m = laserGroup.children[li].material;
@@ -2407,7 +2407,7 @@ canvas { display: block; width: 100%; height: 100%; }
     // Reset lasers
     if (laserGroup) {
       for (let li = 0; li < laserGroup.children.length; li++) {
-        laserGroup.children[li].material.opacity = 0.12;
+        laserGroup.children[li].material.opacity = 0.30;
         laserGroup.children[li].material.color.setHex(COL_CYAN);
       }
     }

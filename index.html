@@ -723,9 +723,9 @@ canvas { display: block; width: 100%; height: 100%; }
     '  float baseHue = 0.55 + u_hueShift + (energy * 0.1);',
     '  float comboNorm = clamp(u_combo / 20.0, 0.0, 1.0);',
     '  float fluidSat = 0.20 + comboNorm * 0.20;',
-    '  float gridSat = 0.40 + comboNorm * 0.20;',
+    '  float gridSat = 0.70 + comboNorm * 0.20;',
     '  vec3 fluidCol = hsv2rgb(vec3(baseHue, fluidSat, energy * 0.30)) * ao;',
-    '  vec3 gridCol = hsv2rgb(vec3(baseHue - 0.05, gridSat, (hexGrid + gridGlow + neonSpread) * 0.35));',
+    '  vec3 gridCol = hsv2rgb(vec3(baseHue - 0.05, gridSat, (hexGrid + gridGlow + neonSpread) * 0.45));',
     '',
     '  vec3 finalCol = fluidCol + gridCol;',
     '  finalCol *= smoothstep(0.0, 0.02, depth); // 仅极远端微渐隐',
@@ -744,7 +744,7 @@ canvas { display: block; width: 100%; height: 100%; }
     '  finalCol += vec3(1.0, 0.1, 0.3) * u_pulse * hex(hexUv);',
     '',
     '  // 网格边缘微发光，参与 bloom（霓虹溢出）',
-    '  finalCol += vec3(0.1, 0.35, 0.5) * (hexOutline * 0.15 + neonSpread * 0.08) * (1.0 + comboNorm * 0.5);',
+    '  finalCol += vec3(0.05, 0.3, 0.55) * (hexOutline * 0.2 + neonSpread * 0.1) * (1.0 + comboNorm * 0.5);',
     '  gl_FragColor = vec4(finalCol, 1.0);',
     '}'
   ].join('\n');

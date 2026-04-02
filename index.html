@@ -1559,7 +1559,8 @@ canvas { display: block; width: 100%; height: 100%; }
         '}'
       ].join('\n')
     });
-    const neb = new THREE.Mesh(new THREE.PlaneGeometry(TUNNEL_RADIUS * 3, TUNNEL_RADIUS * 3), nebMat);
+    const neb = new THREE.Mesh(new THREE.SphereGeometry(TUNNEL_RADIUS * 1.5, 32, 16, 0, Math.PI * 2, 0, Math.PI * 0.5), nebMat);
+    neb.rotation.x = Math.PI;
     neb.position.z = -TUNNEL_LENGTH + 5;
     scene.add(neb);
   }

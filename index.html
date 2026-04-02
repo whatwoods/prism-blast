@@ -869,7 +869,7 @@ canvas { display: block; width: 100%; height: 100%; }
   ].join('\n');
 
   // ─── AUDIO ───
-  var audioCtx, masterFilter;
+  var audioCtx, masterFilter, masterGain;
   var hitStopAudioActive = false;
   function ensureAudio() {
     if (!audioCtx) {
@@ -879,7 +879,10 @@ canvas { display: block; width: 100%; height: 100%; }
       masterFilter.type = 'lowpass';
       masterFilter.frequency.value = 22000; // wide open by default
       masterFilter.Q.value = 0.7;
-      masterFilter.connect(audioCtx.destination);
+      masterGain = audioCtx.createGain();
+      masterGain.gain.value = 2.0;
+      masterFilter.connect(masterGain);
+      masterGain.connect(audioCtx.destination);
     }
     if (audioCtx.state === 'suspended') {
       audioCtx.resume();
@@ -1107,7 +1110,7 @@ canvas { display: block; width: 100%; height: 100%; }
     sub.frequency.exponentialRampToValueAtTime(30, t + 0.2);
     subG.gain.setValueAtTime(0.25, t);
     subG.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
-    sub.connect(subG); subG.connect(audioCtx.destination);
+    sub.connect(subG); subG.connect(getMasterOut());
     sub.start(t); sub.stop(t + 0.2);
     
     // Sharp high-pass synth burst
@@ -1122,7 +1125,7 @@ canvas { display: block; width: 100%; height: 100%; }
     lpf.Q.value = 1.5;
     g.gain.setValueAtTime(0.3, t);
     g.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
-    src.connect(lpf); lpf.connect(g); g.connect(audioCtx.destination);
+    src.connect(lpf); lpf.connect(g); g.connect(getMasterOut());
     src.start(t);
   }
 

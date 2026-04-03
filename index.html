@@ -596,7 +596,7 @@ canvas { display: block; width: 100%; height: 100%; }
   let nebulaUniforms; // FBM nebula shader uniforms
   let tunnelRings = []; // structural rings for movement
   let difficulty = 1, shakeIntensity = 0;
-  let wave = 1, waveKills = 0, waveThreshold = 8;
+  let wave = 1, waveKills = 0, waveThreshold = 10;
   let waveBreakTimer = 0;
   const WAVE_BREAK_DURATION = 3.0;
   let tunnelPulse = 0, fovPulse = 0, baseFov = 45;
@@ -1612,7 +1612,7 @@ canvas { display: block; width: 100%; height: 100%; }
     const hue = hp === 1 ? Math.random() : hp === 2 ? 0.08 : 0.0;
     const color = new THREE.Color().setHSL(hue, 0.65, 0.5);
     const emissive = new THREE.Color().setHSL(hue, 0.75, 0.35);
-    const speed = OBSTACLE_SPEED + difficulty * 0.05;
+    const speed = OBSTACLE_SPEED + difficulty * 0.07;
 
     const entry = acquireObstacle(px, py, pz, size, hp, color, emissive, speed);
     if (!entry) return;
@@ -2415,7 +2415,7 @@ canvas { display: block; width: 100%; height: 100%; }
       if (waveBreakTimer <= 0) {
         // Break over — advance to next wave
         waveBreakTimer = 0;
-        wave++; waveThreshold = Math.floor(8 + wave * 3);
+        wave++; waveThreshold = Math.floor(10 + wave * 4);
         // Boss every 10 waves
         if (wave % 10 === 0) {
           const bossLevel = wave / 10;
@@ -2713,7 +2713,7 @@ canvas { display: block; width: 100%; height: 100%; }
     score = 0; combo = 1; comboTimer = 0; maxCombo = 1; kills = 0;
     lives = MAX_LIVES; ammoRegenAccum = 0;
     spawnAccum = 0; difficulty = 1; shakeIntensity = 0;
-    wave = 1; waveKills = 0; waveThreshold = 8; waveBreakTimer = 0; tunnelPulse = 0; fovPulse = 0;
+    wave = 1; waveKills = 0; waveThreshold = 10; waveBreakTimer = 0; tunnelPulse = 0; fovPulse = 0;
     glitchIntensity = 0;
     hitStopTimer = 0;
     isHolding = false; autoFireAccum = 0;

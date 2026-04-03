@@ -673,6 +673,7 @@ canvas { display: block; width: 100%; height: 100%; }
   let globalTime = 0;
   let hitStopTimer = 0;
   let isHolding = false, autoFireAccum = 0; // hold-to-fire state
+  let fireCooldown = 0; // cooldown so tap rate matches hold rate
 
   // ─── DESATURATED COLOR PALETTE ───
   const COL_CYAN    = 0x5de0d8; // muted teal-cyan
@@ -683,12 +684,17 @@ canvas { display: block; width: 100%; height: 100%; }
   // ─── GLSL: Tunnel Shader ───
   const TUNNEL_VERT = [
     'uniform float u_time;',
+    'uniform float u_tunnelRadius;',
+    'uniform float u_baseTunnelRadius;',
     'varying vec2 vUv;',
     'varying vec3 vWorldPos;',
     'void main() {',
     '  vUv = uv;',
-    '  vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;',
-    '  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);',
+    '  vec3 scaled = position;',
+    '  float radiusScale = u_tunnelRadius / u_baseTunnelRadius;',
+    '  scaled.xy *= radiusScale;',
+    '  vWorldPos = (modelMatrix * vec4(scaled, 1.0)).xyz;',
+    '  gl_Position = projectionMatrix * modelViewMatrix * vec4(scaled, 1.0);',
     '}'
   ].join('\n');
 
@@ -1517,6 +1523,8 @@ canvas { display: block; width: 100%; height: 100%; }
       u_time: { value: 0.0 },
       u_pulse: { value: 0.0 },
       u_hueShift: { value: 0.0 },
+      u_tunnelRadius: { value: TUNNEL_RADIUS_NORMAL },
+      u_baseTunnelRadius: { value: TUNNEL_RADIUS_NORMAL },
       u_ripples: { value: [
         new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(),
         new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()
@@ -1792,7 +1800,9 @@ canvas { display: block; width: 100%; height: 100%; }
     { name: '护盾', color: COL_MAGENTA, effect: 'shield' },
   ];
   function spawnPowerup() {
-    const type = POWERUP_TYPES[Math.floor(Math.random() * POWERUP_TYPES.length)];
+    let pool = POWERUP_TYPES;
+    if (shield > 0) pool = POWERUP_TYPES.filter(t => t.effect !== 'shield');
+    const type = pool[Math.floor(Math.random() * pool.length)];
     const a = Math.random() * Math.PI * 2, r = Math.random() * (tunnelRadius - 1.5);
     const geo = new THREE.OctahedronGeometry(0.4, 0);
     // No PointLight — rely on emissive + bloom
@@ -1941,333 +1951,547 @@ canvas { display: block; width: 100%; height: 100%; }
     };
   })();
 
-  // ═══ BOSS SYSTEM ═══
-  function spawnBoss(bossLevel) {
-    const bossHP = 15 + bossLevel * 10;
-    const plateCount = 4 + Math.min(bossLevel, 6);
-    const bossSize = 3.0 + bossLevel * 0.4;
-    const bossSpeed = 2.0 + bossLevel * 0.3;
+  // ═══ BOSS SYSTEM — Energy Storm ═══
+  function createBoss(bossLevel) {
+    const maxHp = 30 + bossLevel * 15;
+    const baseAttackInterval = Math.max(0.4, 0.8 - bossLevel * 0.05);
+    const convergeSpeed = 8 + bossLevel * 1.5;
 
     const group = new THREE.Group();
 
-    // Central Core - Octahedron
-    const coreGeo = new THREE.OctahedronGeometry(bossSize * 0.7, 0);
-    const coreMat = new THREE.MeshPhysicalMaterial({
-      color: 0x220033, emissive: 0x440088, emissiveIntensity: 1.0,
-      metalness: 0.9, roughness: 0.1, clearcoat: 1.0,
-      transparent: true, opacity: 0.9,
-    });
-    const coreMesh = new THREE.Mesh(coreGeo, coreMat);
-    group.add(coreMesh);
+    // ─ Particle cloud ─
+    const PARTICLE_COUNT = 250;
+    const positions = new Float32Array(PARTICLE_COUNT * 3);
+    const colors = new Float32Array(PARTICLE_COUNT * 3);
+    const sizes = new Float32Array(PARTICLE_COUNT);
+    const particleBasePos = [];
 
-    // Inner glowing core
-    const innerGeo = new THREE.OctahedronGeometry(bossSize * 0.4, 0);
-    const innerMat = new THREE.MeshBasicMaterial({ 
-      color: 0x00f0ff, wireframe: true, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending 
-    });
-    const innerMesh = new THREE.Mesh(innerGeo, innerMat);
-    group.add(innerMesh);
-
-    // Orbiting Destructible Plates
-    const plates = [];
-    const plateHp = 3 + Math.floor(bossLevel / 2);
-    for (let i = 0; i < plateCount; i++) {
-      const pGeo = new THREE.BoxGeometry(bossSize * 0.8, bossSize * 0.8, 0.4);
-      const pMat = new THREE.MeshPhysicalMaterial({
-         color: 0x00f0ff, emissive: 0x0088aa, emissiveIntensity: 1.5,
-         transparent: true, opacity: 0.9
-      });
-      const pMesh = new THREE.Mesh(pGeo, pMat);
-      
-      const pivot = new THREE.Group();
-      pivot.rotation.x = Math.random() * Math.PI * 2;
-      pivot.rotation.y = Math.random() * Math.PI * 2;
-      
-      // Distance from center
-      const dist = bossSize * 1.5 + Math.random() * bossSize * 0.5;
-      pMesh.position.set(0, 0, dist);
-      
-      // Face outward
-      pMesh.lookAt(0, 0, 0);
-      
-      pivot.add(pMesh);
-      group.add(pivot);
-      
-      plates.push({
-        pivot: pivot,
-        mesh: pMesh,
-        mat: pMat,
-        hp: plateHp,
-        maxHp: plateHp,
-        alive: true,
-        rotAxis: new THREE.Vector3(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5).normalize(),
-        rotSpeed: 1.0 + Math.random() * 2.0
-      });
+    for (let i = 0; i < PARTICLE_COUNT; i++) {
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(2 * Math.random() - 1);
+      const r = 1.5 + Math.random() * 2.0;
+      const x = r * Math.sin(phi) * Math.cos(theta);
+      const y = r * Math.sin(phi) * Math.sin(theta);
+      const z = r * Math.cos(phi) * 0.7;
+      particleBasePos.push(x, y, z);
+      positions[i * 3] = x; positions[i * 3 + 1] = y; positions[i * 3 + 2] = z;
+      const hue = 0.5 + Math.random() * 0.2;
+      const col = new THREE.Color().setHSL(hue, 0.9, 0.6);
+      colors[i * 3] = col.r; colors[i * 3 + 1] = col.g; colors[i * 3 + 2] = col.b;
+      sizes[i] = 3.0 + Math.random() * 4.0;
     }
+
+    const particleGeo = new THREE.BufferGeometry();
+    particleGeo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    particleGeo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    particleGeo.setAttribute('size', new THREE.Float32BufferAttribute(sizes, 1));
+
+    const particleMat = new THREE.PointsMaterial({
+      size: 0.35, vertexColors: true, transparent: true, opacity: 0.85,
+      blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true,
+    });
+
+    const particles = new THREE.Points(particleGeo, particleMat);
+    group.add(particles);
+
+    // ─ Energy core (weak point) ─
+    const coreGeo = new THREE.SphereGeometry(0.6, 16, 12);
+    const coreMat = new THREE.MeshBasicMaterial({
+      color: 0x00f0ff, transparent: true, opacity: 0.9,
+      blending: THREE.AdditiveBlending,
+    });
+    const core = new THREE.Mesh(coreGeo, coreMat);
+    group.add(core);
+
+    // ─ Core glow ─
+    const glowGeo = new THREE.SphereGeometry(1.2, 12, 8);
+    const glowMat = new THREE.MeshBasicMaterial({
+      color: 0x00f0ff, transparent: true, opacity: 0.25,
+      blending: THREE.AdditiveBlending,
+    });
+    const coreGlow = new THREE.Mesh(glowGeo, glowMat);
+    group.add(coreGlow);
 
     group.position.z = -70;
     scene.add(group);
 
-    boss = {
-      group, coreMesh, coreMat, innerMesh, innerMat, plates,
-      hp: bossHP, maxHp: bossHP, level: bossLevel,
-      size: bossSize, speed: bossSpeed * 1.5,
-      phase: 'approach', // approach -> shielded -> exposed -> dying
-      phaseTimer: 0,
-      attackTimer: 2.0,
-      attackInterval: Math.max(0.8, 2.5 - bossLevel * 0.3),
-      targetZ: -18 - bossLevel * 1.5,
-      rotSpeed: 0.5 + bossLevel * 0.1,
-      shake: 0 // independent boss shake
+    // ─ State ─
+    const state = {
+      group, particles, particleGeo, particleMat, core, coreMat, coreGlow, glowMat,
+      particleBasePos,
+      hp: maxHp, maxHp,
+      level: bossLevel,
+      phase: 'entrance',
+      phaseTimer: 2.0,
+      cycleCount: 0,
+      attackTimer: 0,
+      baseAttackInterval,
+      convergeSpeed,
+      particleShieldHp: 0,
+      maxParticleShieldHp: 0,
+      targetZ: -20,
+      shake: 0,
+      particleSpread: 3.5,
+      targetSpread: 3.5,
+      colorShift: 0,
+      targetColorShift: 0,
+      coreVisible: true,
+      entranceProgress: 0,
+      _coreFlash: 0,
+      _slowTimer: 0,
+      _attackCount: 0,
+      _shieldBroken: false,
+      _coreExposeTimer: 0,
     };
-    bossActive = true;
-    announceWave('⚠ 警告: 维度巨像 接近 ⚠');
-    spawnBonusPopup('⚠ BOSS 出现 ⚠');
+
+    // ─ Particle animation ─
+    function animateParticles(dt, time) {
+      const pos = particleGeo.attributes.position.array;
+      const col = particleGeo.attributes.color.array;
+      const spread = state.particleSpread;
+      const shift = state.colorShift;
+      const hpRatio = state.hp / state.maxHp;
+      const instability = 1 + (1 - hpRatio) * 2.0;
+
+      for (let i = 0; i < PARTICLE_COUNT; i++) {
+        const bx = particleBasePos[i * 3];
+        const by = particleBasePos[i * 3 + 1];
+        const bz = particleBasePos[i * 3 + 2];
+        const ns = 0.4;
+        const nx = SimplexNoise3D(bx * ns + time * 0.5, by * ns, bz * ns) * instability;
+        const ny = SimplexNoise3D(bx * ns, by * ns + time * 0.5, bz * ns) * instability;
+        const nz = SimplexNoise3D(bx * ns, by * ns, bz * ns + time * 0.5) * instability;
+        const scale = spread / 3.5;
+        pos[i * 3]     = bx * scale + nx;
+        pos[i * 3 + 1] = by * scale + ny;
+        pos[i * 3 + 2] = bz * scale + nz;
+        const baseHue = 0.5 + (particleBasePos[i * 3] * 0.05);
+        const hue = baseHue * (1 - shift) + (0.95 + particleBasePos[i * 3] * 0.02) * shift;
+        const c = new THREE.Color().setHSL(hue % 1, 0.9, 0.5 + Math.sin(time * 3 + i) * 0.1);
+        col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
+      }
+      particleGeo.attributes.position.needsUpdate = true;
+      particleGeo.attributes.color.needsUpdate = true;
+
+      if (hpRatio < 0.6 && Math.random() < (1 - hpRatio) * 0.3) {
+        const idx = (Math.random() * PARTICLE_COUNT) | 0;
+        pos[idx * 3] += (Math.random() - 0.5) * 4;
+        pos[idx * 3 + 1] += (Math.random() - 0.5) * 4;
+        pos[idx * 3 + 2] += (Math.random() - 0.5) * 4;
+      }
+    }
+
+    // ─ Core animation ─
+    function animateCore(dt, time) {
+      const breathe = 0.8 + Math.sin(time * 3) * 0.2;
+      core.scale.setScalar(breathe);
+      coreGlow.scale.setScalar(breathe * 1.8);
+      if (coreMat.color.r > 0.1 && state._coreFlash) {
+        state._coreFlash -= dt * 5;
+        if (state._coreFlash <= 0) {
+          state._coreFlash = 0;
+          const hue = state.colorShift > 0.5 ? 0.95 : 0.5;
+          coreMat.color.setHSL(hue, 0.9, 0.7);
+          glowMat.color.copy(coreMat.color);
+        }
+      }
+    }
+
+    // ─ Phase: Entrance ─
+    function updateEntrance(dt) {
+      state.phaseTimer -= dt;
+      state.entranceProgress = 1 - (state.phaseTimer / 2.0);
+      tunnelRadius = TUNNEL_RADIUS_NORMAL + (TUNNEL_RADIUS_BOSS - TUNNEL_RADIUS_NORMAL) * Math.min(1, state.entranceProgress);
+      const t = Math.min(1, state.entranceProgress);
+      group.position.z = -70 + (70 + state.targetZ) * t * t;
+      shakeIntensity = Math.min(shakeIntensity + dt * 0.15, 0.3);
+      if (state.phaseTimer <= 0) {
+        group.position.z = state.targetZ;
+        tunnelRadius = TUNNEL_RADIUS_BOSS;
+        state.phase = 'storm';
+        state.phaseTimer = 7;
+        state.cycleCount = 1;
+        state.attackTimer = state.baseAttackInterval;
+        spawnBonusPopup('⚠ BOSS 出现 ⚠');
+      }
+    }
+
+    // ─ Phase: Storm (ranged barrage) ─
+    function updateStorm(dt, time) {
+      state.phaseTimer -= dt;
+      state.targetSpread = 3.5;
+      state.targetColorShift = 0;
+      state.coreVisible = true;
+      group.position.z = state.targetZ + Math.sin(time * 1.5) * 1.0;
+      group.position.x = Math.cos(time * 0.8) * 2.5;
+      group.position.y = Math.sin(time * 0.9) * 2.0;
+      state.attackTimer -= dt;
+      if (state.attackTimer <= 0) {
+        const interval = Math.max(0.3, state.baseAttackInterval - state.cycleCount * 0.15);
+        state.attackTimer = interval;
+        fireStormAttack();
+      }
+      if (state.phaseTimer <= 0) {
+        beginConverge();
+      }
+    }
+
+    // ─ Phase: Converge (charging approach) ─
+    function updateConverge(dt, time) {
+      state.targetSpread = 1.0;
+      state.targetColorShift = 1;
+      state.coreVisible = false;
+      if (glitchPass) glitchPass.uniforms.u_aberration.value = Math.max(glitchPass.uniforms.u_aberration.value, 0.08);
+      if (bloomPass) bloomPass.strength = Math.max(bloomPass.strength, 1.8);
+      const speed = state.convergeSpeed + state.cycleCount * 2;
+      let moveSpeed = speed;
+      if (state._slowTimer > 0) {
+        state._slowTimer -= dt;
+        moveSpeed *= 0.5;
+      }
+      group.position.z += moveSpeed * dt;
+      state.attackTimer -= dt;
+      if (state.attackTimer <= 0) {
+        state.attackTimer = 1.2;
+        fireConvergeDebris();
+      }
+      if (state.particleShieldHp <= 0 && !state._shieldBroken) {
+        state._shieldBroken = true;
+        state._coreExposeTimer = 2.0;
+        state.coreVisible = true;
+        state.targetSpread = 3.0;
+        spawnBonusPopup('核心暴露！');
+        shakeIntensity = Math.min(shakeIntensity + 0.4, 0.8);
+        glitchIntensity = Math.min(glitchIntensity + 0.5, 1.0);
+      }
+      if (state._shieldBroken && state._coreExposeTimer > 0) {
+        state._coreExposeTimer -= dt;
+        if (state._coreExposeTimer <= 0) {
+          returnToStorm();
+          return;
+        }
+      }
+      if (group.position.z >= -5) {
+        for (let i = 0; i < 2; i++) takeDamage();
+        group.position.z = state.targetZ;
+        createGPUExplosion(group.position.clone(), new THREE.Color(0xff0055), 60, new THREE.Vector3(0,0,1));
+        shakeIntensity = Math.min(shakeIntensity + 0.6, 1.0);
+        returnToStorm();
+      }
+    }
+
+    function returnToStorm() {
+      state.phase = 'storm';
+      state.phaseTimer = 7;
+      state.cycleCount++;
+      state.attackTimer = state.baseAttackInterval;
+      state._shieldBroken = false;
+      state.particleShieldHp = getShieldHp();
+      state.maxParticleShieldHp = state.particleShieldHp;
+      group.position.z = state.targetZ;
+      if (state.cycleCount >= 5) {
+        beginFrenzy();
+      }
+    }
+
+    function beginConverge() {
+      state.phase = 'converge';
+      state.particleShieldHp = getShieldHp();
+      state.maxParticleShieldHp = state.particleShieldHp;
+      state.attackTimer = 1.2;
+      state._shieldBroken = false;
+      state._slowTimer = 0;
+      spawnBonusPopup('⚠ 聚合 ⚠');
+    }
+
+    function getShieldHp() {
+      const base = [0, 8, 12, 15, 18, 18];
+      const idx = Math.min(state.cycleCount, 5);
+      return (base[idx] || 8) + bossLevel * 3;
+    }
+
+    // ─ Phase: Frenzy ─
+    function beginFrenzy() {
+      state.phase = 'frenzy';
+      state.targetSpread = 2.5;
+      state.targetColorShift = 0.8;
+      state.coreVisible = true;
+      state.attackTimer = 0.4;
+      spawnBonusPopup('⚠ 狂暴！ ⚠');
+      shakeIntensity = Math.min(shakeIntensity + 0.6, 1.0);
+      glitchIntensity = 1.0;
+    }
+
+    function updateFrenzy(dt, time) {
+      state.targetColorShift = 0.5 + Math.sin(time * 8) * 0.5;
+      state.coreVisible = true;
+      if (group.position.z < -5) {
+        group.position.z += 4 * dt;
+      }
+      group.position.x = Math.cos(time * 1.5) * 2.0;
+      group.position.y = Math.sin(time * 1.3) * 1.5;
+      state.attackTimer -= dt;
+      if (state.attackTimer <= 0) {
+        state.attackTimer = 0.4;
+        fireStormAttack();
+      }
+    }
+
+    // ─ Phase: Dying ─
+    function updateDying(dt, time) {
+      state.phaseTimer -= dt;
+      const t = 1 - (state.phaseTimer / 2.0);
+      if (t < 0.5) {
+        state.targetSpread = 3.5 * (1 - t * 2);
+        particleMat.opacity = 0.85;
+      } else {
+        state.targetSpread = 3.5 + (t - 0.5) * 20;
+        particleMat.opacity = Math.max(0, 1 - (t - 0.5) * 2);
+        coreMat.opacity = Math.max(0, 1 - (t - 0.5) * 3);
+      }
+      state.shake = 0.5 + t * 1.5;
+      if (state.phaseTimer <= 0) {
+        disposeInternal();
+      }
+    }
+
+    // ─ Attacks ─
+    function fireStormAttack() {
+      const count = 2 + state.cycleCount;
+      const patterns = ['fan', 'spiral', 'random'];
+      const pattern = patterns[state._attackCount % patterns.length];
+      state._attackCount++;
+
+      for (let i = 0; i < count; i++) {
+        let angle, r;
+        if (pattern === 'fan') {
+          const spread = Math.PI * 0.6;
+          angle = -spread / 2 + (spread / (count - 1 || 1)) * i;
+          r = 1.5 + Math.random() * 1.5;
+        } else if (pattern === 'spiral') {
+          angle = (Math.PI * 2 / count) * i + globalTime * 2;
+          r = 2.0 + Math.random() * 1.0;
+        } else {
+          angle = Math.random() * Math.PI * 2;
+          r = 1.0 + Math.random() * 2.5;
+        }
+        const px = Math.cos(angle) * r + group.position.x;
+        const py = Math.sin(angle) * r + group.position.y;
+        const pz = group.position.z - 1;
+        const speed = OBSTACLE_SPEED * 1.3;
+        const color = new THREE.Color().setHSL(0.55, 0.8, 0.5);
+        const emissive = new THREE.Color().setHSL(0.55, 0.9, 0.4);
+        const entry = acquireObstacle(px, py, pz, 0.5, 1, color, emissive, speed);
+        if (entry) {
+          obstacles.push({ mesh: entry.group, body: entry.body, speed, size: 0.5, hp: 1, maxHp: 1, color: color.clone(), coreMat: entry.coreMat, shellMat: entry.shellMat, _poolEntry: entry });
+        }
+      }
+    }
+
+    function fireConvergeDebris() {
+      const count = 1 + Math.floor(state.cycleCount / 2);
+      for (let i = 0; i < count; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const r = 1.0 + Math.random() * 1.5;
+        const px = Math.cos(angle) * r + group.position.x;
+        const py = Math.sin(angle) * r + group.position.y;
+        const pz = group.position.z + 1;
+        const speed = OBSTACLE_SPEED * 0.8;
+        const color = new THREE.Color().setHSL(0.85, 0.8, 0.5);
+        const emissive = new THREE.Color().setHSL(0.85, 0.9, 0.4);
+        const entry = acquireObstacle(px, py, pz, 0.8, 1, color, emissive, speed);
+        if (entry) {
+          obstacles.push({ mesh: entry.group, body: entry.body, speed, size: 0.8, hp: 1, maxHp: 1, color: color.clone(), coreMat: entry.coreMat, shellMat: entry.shellMat, _poolEntry: entry });
+        }
+      }
+    }
+
+    // ─ Hit handling ─
+    function handleHit(hitPos) {
+      if (state.phase === 'entrance' || state.phase === 'dying') return { damaged: false };
+
+      const bossPos = group.position;
+      const dx = hitPos.x - bossPos.x, dy = hitPos.y - bossPos.y, dz = hitPos.z - bossPos.z;
+      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+      // In converge phase with active shield: hit shield
+      if (state.phase === 'converge' && state.particleShieldHp > 0) {
+        if (dist < 4.0) {
+          state.particleShieldHp--;
+          state._slowTimer = 0.3;
+          createGPUExplosion(hitPos.clone(), new THREE.Color(0x8800ff), 15, new THREE.Vector3(0, 0, 1));
+          return { damaged: true, amount: 0, type: 'shield' };
+        }
+        return { damaged: false };
+      }
+
+      // Core hit (storm, frenzy, or exposed in converge)
+      if (state.coreVisible && dist < 2.5) {
+        state.hp--;
+        state.shake = 0.5;
+        state._coreFlash = 1;
+        coreMat.color.set(0xffffff);
+        glowMat.color.set(0xffffff);
+        flashBossHud();
+        createGPUExplosion(hitPos.clone(), new THREE.Color(0x00f0ff), 30, new THREE.Vector3(0, 0, 1));
+        spawnDamageNumber(hitPos.clone());
+        shakeIntensity = Math.min(shakeIntensity + 0.2, 0.6);
+        hitStopTimer = 0.03;
+        playHit();
+
+        if (state.hp > 0 && state.hp <= state.maxHp * 0.2 && state.phase !== 'frenzy') {
+          beginFrenzy();
+        }
+        if (state.hp <= 0) {
+          state.phase = 'dying';
+          state.phaseTimer = 2.0;
+          hitStopTimer = 0.1;
+          shakeIntensity = 1.0;
+          glitchIntensity = 1.0;
+          for (let j = 0; j < 6; j++) {
+            setTimeout(() => {
+              if (group.parent) {
+                const p = group.position.clone().add(new THREE.Vector3((Math.random()-0.5)*5, (Math.random()-0.5)*5, (Math.random()-0.5)*5));
+                createGPUExplosion(p, new THREE.Color(0xff0055), 100, new THREE.Vector3(0,0,1));
+              }
+            }, j * 200);
+          }
+        }
+        return { damaged: true, amount: 1, type: 'core' };
+      }
+
+      return { damaged: false };
+    }
+
+    function getHitTargets() {
+      const targets = [];
+      const bossPos = group.position;
+      if (state.phase === 'converge' && state.particleShieldHp > 0) {
+        targets.push({ pos: bossPos.clone(), radius: 4.0, type: 'shield' });
+      }
+      if (state.coreVisible) {
+        targets.push({ pos: bossPos.clone(), radius: 2.5, type: 'core' });
+      }
+      return targets;
+    }
+
+    function getHudData() {
+      return {
+        hp: state.hp, maxHp: state.maxHp,
+        phase: state.phase,
+        name: '维度风暴 Lv.' + bossLevel,
+        shieldHp: state.particleShieldHp,
+        maxShieldHp: state.maxParticleShieldHp,
+      };
+    }
+
+    // ─ Main update ─
+    function update(dt) {
+      const time = globalTime;
+      state.particleSpread += (state.targetSpread - state.particleSpread) * Math.min(1, dt * 4);
+      state.colorShift += (state.targetColorShift - state.colorShift) * Math.min(1, dt * 4);
+
+      if (state.shake > 0) {
+        group.position.x += (Math.random() - 0.5) * state.shake;
+        group.position.y += (Math.random() - 0.5) * state.shake;
+        state.shake *= Math.pow(0.01, dt);
+        if (state.shake < 0.01) state.shake = 0;
+      }
+
+      if (state.phase === 'entrance') updateEntrance(dt);
+      else if (state.phase === 'storm') updateStorm(dt, time);
+      else if (state.phase === 'converge') updateConverge(dt, time);
+      else if (state.phase === 'frenzy') updateFrenzy(dt, time);
+      else if (state.phase === 'dying') updateDying(dt, time);
+
+      animateParticles(dt, time);
+      animateCore(dt, time);
+    }
+
+    // ─ Dispose (internal, after death animation) ─
+    function disposeInternal() {
+      scene.remove(group);
+      particleGeo.dispose(); particleMat.dispose();
+      coreGeo.dispose(); coreMat.dispose();
+      glowGeo.dispose(); glowMat.dispose();
+
+      // Rewards
+      const bossScore = 8000 * bossLevel;
+      score += bossScore; scoreEl.textContent = score;
+      spawnScorePopup(bossScore);
+
+      createGPUExplosion(group.position.clone(), new THREE.Color(0xffcc00), 150, new THREE.Vector3(0,0,1));
+
+      // Permanent buff (3-way rotation)
+      const buffType = bossLevel % 3;
+      if (buffType === 1) {
+        extraBalls++;
+        spawnBonusPopup('永久强化: 每发 +1 球');
+      } else if (buffType === 2) {
+        fireRateBonus += 0.02;
+        spawnBonusPopup('永久强化: 射速提升');
+      } else {
+        piercingBonus++;
+        spawnBonusPopup('永久强化: 穿透 +1');
+      }
+
+      glitchIntensity = 1.0;
+      fovPulse = 1.0;
+      shakeIntensity = 0.8;
+      tunnelUniforms.u_hueShift.value += 0.15;
+
+      // Tunnel shrink back
+      const shrinkStart = tunnelRadius;
+      const shrinkDuration = 1.0;
+      let shrinkTime = 0;
+      const shrinkInterval = setInterval(() => {
+        shrinkTime += 0.016;
+        const t = Math.min(1, shrinkTime / shrinkDuration);
+        tunnelRadius = shrinkStart + (TUNNEL_RADIUS_NORMAL - shrinkStart) * t;
+        if (t >= 1) { tunnelRadius = TUNNEL_RADIUS_NORMAL; clearInterval(shrinkInterval); }
+      }, 16);
+
+      boss = null;
+      bossActive = false;
+      hideBossHud();
+
+      waveBreakTimer = WAVE_BREAK_DURATION;
+      lives = MAX_LIVES; updateLivesUI();
+    }
+
+    // ─ Dispose (external, for resetState) ─
+    function dispose() {
+      if (group.parent) scene.remove(group);
+      particleGeo.dispose(); particleMat.dispose();
+      coreGeo.dispose(); coreMat.dispose();
+      glowGeo.dispose(); glowMat.dispose();
+    }
+
+    // ─ Public interface ─
+    return {
+      get hp() { return state.hp; },
+      get maxHp() { return state.maxHp; },
+      get phase() { return state.phase; },
+      get group() { return group; },
+      update,
+      handleHit,
+      getHitTargets,
+      getHudData,
+      dispose,
+    };
   }
 
-  function updateBoss(dt) {
-    if (!boss) return;
-    const b = boss;
-
-    // Apply independent shake
-    let shakeOffset = new THREE.Vector3();
-    if (b.shake > 0) {
-      shakeOffset.set((Math.random()-0.5)*b.shake, (Math.random()-0.5)*b.shake, (Math.random()-0.5)*b.shake);
-      b.shake *= Math.pow(0.01, dt);
-      if (b.shake < 0.01) b.shake = 0;
-    }
-
-    // Rotation
-    b.coreMesh.rotation.x += dt * b.rotSpeed * 0.7;
-    b.coreMesh.rotation.y += dt * b.rotSpeed;
-    b.innerMesh.rotation.x -= dt * b.rotSpeed * 1.2;
-    b.innerMesh.rotation.y -= dt * b.rotSpeed * 1.5;
-    
-
-    // Plates orbit
-    if (b.plates) {
-      b.plates.forEach(p => {
-        if (!p.alive) return;
-        p.pivot.rotateOnAxis(p.rotAxis, dt * p.rotSpeed);
-        p.mesh.rotation.x += dt * 2.0;
-        p.mesh.rotation.y += dt * 2.0;
-      });
-    }
-
-    if (b.phase === 'approach') {
-      b.group.position.z += b.speed * dt;
-      if (b.group.position.z >= b.targetZ) {
-        b.group.position.z = b.targetZ;
-        b.phase = 'shielded';
-      }
-      b.group.position.add(shakeOffset);
-    } else if (b.phase === 'shielded' || b.phase === 'exposed') {
-      // Boss attacks — spawn obstacles from boss position
-      b.attackTimer -= dt;
-      if (b.attackTimer <= 0) {
-        b.attackTimer = b.attackInterval;
-        bossAttack(b);
-      }
-
-      // Slow bob + shake
-      b.group.position.z = b.targetZ + Math.sin(globalTime * 1.5) * 1.0 + shakeOffset.z;
-      b.group.position.x = Math.cos(globalTime * 0.8) * 2.0 + shakeOffset.x;
-      b.group.position.y = Math.sin(globalTime * 0.9) * 1.5 + shakeOffset.y;
-      
-    } else if (b.phase === 'dying') {
-      b.phaseTimer -= dt;
-      b.coreMat.opacity = Math.max(0, b.phaseTimer / 1.5);
-      b.innerMat.opacity = Math.max(0, b.phaseTimer / 1.5);
-      b.group.scale.setScalar(1 + (1.5 - b.phaseTimer) * 0.8);
-      b.group.position.add(shakeOffset);
-      if (b.phaseTimer <= 0) {
-        destroyBoss();
-      }
-    }
-  }
-
-  function bossAttack(b) {
-    // Spawn a ring of small obstacles from boss position
-    const isExposed = b.phase === 'exposed';
-    const count = isExposed ? 4 + b.level : 2 + b.level;
-    for (let i = 0; i < count; i++) {
-      const angle = (Math.PI * 2 / count) * i + Math.random() * 0.3;
-      const r = 2.0 + Math.random() * 2.0;
-      const speed = isExposed ? OBSTACLE_SPEED * 1.8 : OBSTACLE_SPEED * 1.2;
-      
-      const px = Math.cos(angle) * r + b.group.position.x;
-      const py = Math.sin(angle) * r + b.group.position.y;
-      const pz = b.group.position.z - 2;
-
-      const size = isExposed ? 0.4 : 0.6;
-      const color = new THREE.Color().setHSL(isExposed ? 0.95 : 0.5, 0.8, 0.5);
-      const emissive = new THREE.Color().setHSL(isExposed ? 0.95 : 0.5, 0.9, 0.4);
-      
-      const entry = acquireObstacle(px, py, pz, size, 1, color, emissive, speed);
-      if (entry) {
-        obstacles.push({ mesh: entry.group, body: entry.body, speed: speed, size, hp: 1, maxHp: 1, color: color.clone(), coreMat: entry.coreMat, shellMat: entry.shellMat, _poolEntry: entry });
-      }
-    }
-  }
-
-  function hitBoss() {
-    if (!boss || boss.phase === 'approach' || boss.phase === 'dying') return false;
-
-    let hitOccurred = false;
+  function checkBossCollisions(b) {
+    if (!b || b.phase === 'entrance' || b.phase === 'dying') return;
     for (let i = balls.length - 1; i >= 0; i--) {
       const ball = balls[i];
       const bp = ball.body.position;
-      const ballDir = new THREE.Vector3(ball.body.velocity.x, ball.body.velocity.y, ball.body.velocity.z).normalize();
-      
-      let ballDestroyed = false;
-
-      if (boss.phase === 'shielded') {
-        // Check collision with plates
-        for (const p of boss.plates) {
-          if (!p.alive) continue;
-          const worldPos = new THREE.Vector3();
-          p.mesh.getWorldPosition(worldPos);
-          
-          const dx = bp.x - worldPos.x, dy = bp.y - worldPos.y, dz = bp.z - worldPos.z;
-          if (Math.sqrt(dx*dx + dy*dy + dz*dz) < boss.size * 0.6) {
-            ballDestroyed = true;
-            hitOccurred = true;
-            p.hp--;
-            if (p.hp <= 0) {
-              p.alive = false;
-              p.mesh.visible = false;
-              createGPUExplosion(worldPos.clone(), new THREE.Color(0x00f0ff), 40, ballDir);
-              playHit();
-              shakeIntensity = Math.min(shakeIntensity + 0.1, 0.4);
-              hitStopTimer = 0.05;
-              boss.shake = 0.2;
-              
-              // Check if all plates destroyed
-              if (boss.plates.every(plate => !plate.alive)) {
-                boss.phase = 'exposed';
-                boss.coreMat.emissive.setHex(0xff0055);
-                boss.innerMat.color.setHex(0xff0055);
-                boss.attackInterval *= 0.5; // attacks faster
-                spawnBonusPopup('核心已暴露！');
-                announceWave('⚠ 核心暴露 ⚠');
-                createGPUExplosion(boss.group.position.clone(), new THREE.Color(0xff0055), 100, new THREE.Vector3(0,0,1));
-                glitchIntensity = 1.0;
-                hitStopTimer = 0.2;
-                boss.shake = 1.0;
-              }
-            } else {
-              p.mat.emissiveIntensity = 6.0;
-              p.mesh.scale.setScalar(0.8); // shrink temporarily
-              setTimeout(() => { 
-                 if (p.alive) { p.mat.emissiveIntensity = 1.5; p.mesh.scale.setScalar(1.0); }
-              }, 80);
-              playHit();
-              hitStopTimer = 0.02;
-            }
-            break;
-          }
-        }
-        
-        // If ball not destroyed by plates, it bounces off the shielded core
-        if (!ballDestroyed) {
-          const dx = bp.x - boss.group.position.x;
-          const dy = bp.y - boss.group.position.y;
-          const dz = bp.z - boss.group.position.z;
-          if (Math.sqrt(dx*dx + dy*dy + dz*dz) < boss.size * 0.8) {
-             ballDestroyed = true;
-             hitOccurred = true;
-             createGPUExplosion(bp.clone(), new THREE.Color(0x440088), 10, ballDir);
-             boss.coreMat.emissiveIntensity = 3.0;
-             setTimeout(() => { if(boss && boss.coreMat && boss.phase === 'shielded') boss.coreMat.emissiveIntensity = 1.0; }, 50);
-             playHit();
-          }
-        }
-      } else if (boss.phase === 'exposed') {
-        // Check collision with core
-        const dx = bp.x - boss.group.position.x;
-        const dy = bp.y - boss.group.position.y;
-        const dz = bp.z - boss.group.position.z;
-        if (Math.sqrt(dx*dx + dy*dy + dz*dz) < boss.size * 0.8) {
-          ballDestroyed = true;
-          hitOccurred = true;
-          boss.hp--;
-          boss.shake = 0.5; // shake the boss model independently
-          boss.coreMat.emissiveIntensity = 6.0;
-          boss.coreMesh.scale.setScalar(0.9);
-          
-          setTimeout(() => { 
-             if(boss && boss.coreMat && boss.phase === 'exposed') {
-                 boss.coreMat.emissiveIntensity = 1.5;
-                 boss.coreMesh.scale.setScalar(1.0);
-             }
-          }, 80);
-
-          shakeIntensity = Math.min(shakeIntensity + 0.25, 0.8);
-          tunnelPulse = 0.3;
-          playHit();
-          hitStopTimer = 0.04;
-          
-          // screen effects
-          if (typeof glitchPass !== 'undefined') glitchPass.uniforms.u_aberration.value = 0.15;
-
-          if (boss.hp <= 0) {
-            boss.phase = 'dying';
-            boss.phaseTimer = 1.5;
-            hitStopTimer = 0.1;
-            for (let j = 0; j < 6; j++) {
-              setTimeout(() => {
-                if (boss && boss.group) {
-                  const p = boss.group.position.clone().add(new THREE.Vector3((Math.random()-0.5)*4, (Math.random()-0.5)*4, (Math.random()-0.5)*4));
-                  createGPUExplosion(p, new THREE.Color(0xff0055), 100, new THREE.Vector3(0,0,1));
-                }
-              }, j * 200);
-            }
-          }
-        }
-      }
-
-      if (ballDestroyed) {
+      const result = b.handleHit(new THREE.Vector3(bp.x, bp.y, bp.z));
+      if (result.damaged) {
         releaseBullet(ball);
         balls.splice(i, 1);
       }
     }
-    return hitOccurred;
-  }
-
-  function destroyBoss() {
-    if (!boss) return;
-    const bossLevel = boss.level;
-
-    // Giant final explosion
-    createGPUExplosion(boss.group.position.clone(), new THREE.Color(0xff00ff), 150, new THREE.Vector3(0,0,1));
-    scene.remove(boss.group);
-
-    // Score reward
-    const bossScore = 5000 * bossLevel;
-    score += bossScore; scoreEl.textContent = score;
-    spawnScorePopup(bossScore);
-
-    // Permanent buff reward — alternate between extra balls and fire rate
-    if (bossLevel % 2 === 1) {
-      extraBalls++;
-      spawnBonusPopup('永久强化: 每发 +1 球');
-    } else {
-      fireRateBonus += 0.02;
-      spawnBonusPopup('永久强化: 射速提升');
-    }
-
-    // Effects
-    glitchIntensity = 1.0;
-    fovPulse = 1.0;
-    shakeIntensity = 0.8;
-    tunnelUniforms.u_hueShift.value += 0.15;
-
-    boss = null;
-    bossActive = false;
-
-    // Resume wave system
-    waveBreakTimer = WAVE_BREAK_DURATION;
-    lives = MAX_LIVES; updateLivesUI();
   }
 
   // ─── DAMAGE ───
@@ -2494,6 +2718,7 @@ canvas { display: block; width: 100%; height: 100%; }
   }
 
   // ─── PHYSICS ───
+  const MAX_BOUNCES = 5; // max wall bounces before bullet is destroyed
   function constrainToCylinder(body) {
     const x = body.position.x, y = body.position.y;
     const r = Math.sqrt(x * x + y * y);
@@ -2502,13 +2727,19 @@ canvas { display: block; width: 100%; height: 100%; }
       const nx = x / r, ny = y / r;
       body.position.x = nx * maxR; body.position.y = ny * maxR;
       const dot = body.velocity.x * nx + body.velocity.y * ny;
-      if (dot > 0) { body.velocity.x -= 2 * dot * nx; body.velocity.y -= 2 * dot * ny; }
+      if (dot > 0) {
+        body.velocity.x -= 2 * dot * nx; body.velocity.y -= 2 * dot * ny;
+        return true; // actual bounce (velocity was reflected)
+      }
     }
+    return false;
   }
 
   function checkBallObstacleCollisions() {
     for (let bi = balls.length - 1; bi >= 0; bi--) {
-      const bp = balls[bi].body.position;
+      const ball = balls[bi];
+      const bp = ball.body.position;
+      let pierceRemaining = ball._pierceLeft !== undefined ? ball._pierceLeft : piercingBonus;
       for (let oi = obstacles.length - 1; oi >= 0; oi--) {
         const obs = obstacles[oi], op = obs.body.position;
         const dx = bp.x-op.x, dy = bp.y-op.y, dz = bp.z-op.z;
@@ -2516,15 +2747,21 @@ canvas { display: block; width: 100%; height: 100%; }
         const hitDist = BALL_RADIUS + obs.size * 0.55;
         if (dist < hitDist && dist > 0.001) {
           const nx=dx/dist, ny=dy/dist, nz=dz/dist;
-          const v = balls[bi].body.velocity;
-          const dot = v.x*nx+v.y*ny+v.z*nz;
-          if (dot < 0) { v.x -= 2*dot*nx; v.y -= 2*dot*ny; v.z -= 2*dot*nz; }
           const overlap = hitDist - dist;
           bp.x += nx*overlap; bp.y += ny*overlap; bp.z += nz*overlap;
-          // Pass ball velocity direction for directional explosion
-          const bv = balls[bi].body.velocity;
+          const bv = ball.body.velocity;
           const ballDir = new THREE.Vector3(bv.x, bv.y, bv.z).normalize();
-          hitObstacle(oi, ballDir); break;
+          hitObstacle(oi, ballDir);
+          if (pierceRemaining > 0) {
+            pierceRemaining--;
+            ball._pierceLeft = pierceRemaining;
+            continue;
+          } else {
+            const v = ball.body.velocity;
+            const dot = v.x*nx+v.y*ny+v.z*nz;
+            if (dot < 0) { v.x -= 2*dot*nx; v.y -= 2*dot*ny; v.z -= 2*dot*nz; }
+            break;
+          }
         }
       }
     }
@@ -2591,9 +2828,11 @@ canvas { display: block; width: 100%; height: 100%; }
     difficulty = 1 + score / 5000;
 
     // Spawn — paused during wave break or boss
-    if (bossActive) {
-      updateBoss(dt);
-      hitBoss();
+    if (bossActive && boss) {
+      boss.update(dt);
+      checkBossCollisions(boss);
+      updateBossHud(boss.getHudData());
+      updateDamageCombo(dt);
     } else if (waveBreakTimer > 0) {
       waveBreakTimer -= dt;
       if (waveBreakTimer <= 0) {
@@ -2603,7 +2842,10 @@ canvas { display: block; width: 100%; height: 100%; }
         // Boss every 10 waves
         if (wave % 10 === 0) {
           const bossLevel = wave / 10;
-          spawnBoss(bossLevel);
+          boss = createBoss(bossLevel);
+          bossActive = true;
+          showBossHud('维度风暴 Lv.' + bossLevel);
+          announceWave('⚠ 警告: 维度风暴 接近 ⚠');
           wavePanelEl.textContent = 'BOSS ' + bossLevel;
         } else {
           wavePanelEl.textContent = '第 ' + wave + ' 波'; announceWave('第 ' + wave + ' 波');
@@ -2616,6 +2858,9 @@ canvas { display: block; width: 100%; height: 100%; }
       if (spawnAccum > spawnRate && obstacles.length < MAX_OBSTACLES) { spawnObstacle(); spawnAccum = 0; }
     }
 
+    // Fire cooldown decay
+    if (fireCooldown > 0) fireCooldown -= dt;
+
     // Auto-fire while holding
     if (isHolding) {
       autoFireAccum += dt;
@@ -2624,6 +2869,7 @@ canvas { display: block; width: 100%; height: 100%; }
       while (autoFireAccum >= fireRate) {
         autoFireAccum -= fireRate;
         shootBall();
+        fireCooldown = fireRate;
       }
     }
 
@@ -2683,7 +2929,12 @@ canvas { display: block; width: 100%; height: 100%; }
     // Balls + trails
     for (let i = balls.length - 1; i >= 0; i--) {
       const b = balls[i]; b.age += dt;
-      constrainToCylinder(b.body);
+      if (constrainToCylinder(b.body)) {
+        b._bounces = (b._bounces || 0) + 1;
+        if (b._bounces >= MAX_BOUNCES) {
+          releaseBullet(b); balls.splice(i, 1); continue;
+        }
+      }
       b.mesh.position.set(b.body.position.x, b.body.position.y, b.body.position.z);
       if (b.age > 6 || b.body.position.z < -TUNNEL_LENGTH - 10 || b.body.position.z > 10) {
         releaseBullet(b); balls.splice(i, 1);
@@ -2708,6 +2959,7 @@ canvas { display: block; width: 100%; height: 100%; }
 
     // ═══ 1. Tunnel shader uniforms ═══
     tunnelUniforms.u_time.value = globalTime;
+    tunnelUniforms.u_tunnelRadius.value = tunnelRadius;
     tunnelUniforms.u_combo.value += (combo - tunnelUniforms.u_combo.value) * dt * 4.0;
     // Combo accelerates tunnel scroll: base 0.04, up to ~0.2 at high combo
     const targetScroll = 0.04 + Math.min(combo * 0.008, 0.16);
@@ -2853,7 +3105,7 @@ canvas { display: block; width: 100%; height: 100%; }
     e.preventDefault(); const t = e.touches[0];
     updateNDC(t.clientX, t.clientY);
     isHolding = true; autoFireAccum = 0;
-    shootBall();
+    if (fireCooldown <= 0) { shootBall(); fireCooldown = Math.max(0.05, (activePowerup === 'rapid' ? AUTO_FIRE_INTERVAL * 0.5 : AUTO_FIRE_INTERVAL) - fireRateBonus); }
   }
   function onTouchMove(e) {
     if (!gameActive) return;
@@ -2862,7 +3114,7 @@ canvas { display: block; width: 100%; height: 100%; }
   function onShoot() {
     if (!gameActive) return;
     isHolding = true; autoFireAccum = 0;
-    shootBall();
+    if (fireCooldown <= 0) { shootBall(); fireCooldown = Math.max(0.05, (activePowerup === 'rapid' ? AUTO_FIRE_INTERVAL * 0.5 : AUTO_FIRE_INTERVAL) - fireRateBonus); }
   }
   function onPointerUp() { isHolding = false; autoFireAccum = 0; }
 
@@ -2891,7 +3143,7 @@ canvas { display: block; width: 100%; height: 100%; }
     activeDebris = [];
     powerups.forEach(p => scene.remove(p.mesh));
     // Clean up boss
-    if (boss) { scene.remove(boss.group); boss = null; }
+    if (boss) { boss.dispose(); boss = null; }
     bossActive = false; extraBalls = 0; fireRateBonus = 0; piercingBonus = 0;
     tunnelRadius = TUNNEL_RADIUS_NORMAL;
     balls = []; obstacles = []; powerups = [];
@@ -2901,7 +3153,7 @@ canvas { display: block; width: 100%; height: 100%; }
     wave = 1; waveKills = 0; waveThreshold = 10; waveBreakTimer = 0; tunnelPulse = 0; fovPulse = 0;
     glitchIntensity = 0;
     hitStopTimer = 0;
-    isHolding = false; autoFireAccum = 0;
+    isHolding = false; autoFireAccum = 0; fireCooldown = 0;
     camera.fov = baseFov; camera.rotation.z = 0; camera.updateProjectionMatrix();
     activePowerup = null; powerupTimer = 0; shield = 0;
     // Reset fog

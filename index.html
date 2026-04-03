@@ -2447,9 +2447,9 @@ canvas { display: block; width: 100%; height: 100%; }
     let closestZ = -999;
     for (let i = obstacles.length - 1; i >= 0; i--) {
       const obs = obstacles[i];
-      // 远快近慢：z 越深速度越快，靠近玩家时减速 (0.8x 到 2.0x)
+      // 远快近慢：z 越深速度越快，靠近玩家时减速 (1.0x 到 2.0x)
       const zNorm = Math.max(0, Math.min(1, -obs.body.position.z / TUNNEL_LENGTH));
-      const speedMul = 0.5 + zNorm * 1.2;
+      const speedMul = 1.0 + zNorm * 1.0;
       obs.body.position.z += obs.speed * speedMul * dt;
       obs.mesh.position.set(obs.body.position.x, obs.body.position.y, obs.body.position.z);
       // Rotate core and shell independently

@@ -2280,7 +2280,7 @@
         const hue = hp === 1 ? Math.random() : hp === 2 ? 0.08 : 0.0;
         const color = new THREE.Color().setHSL(hue, 0.65, 0.5);
         const emissive = new THREE.Color().setHSL(hue, 0.75, 0.35);
-        const speed = OBSTACLE_SPEED + difficulty * 0.07;
+        const speed = OBSTACLE_SPEED + difficulty * 0.10;
 
         const entry = acquireObstacle(px, py, pz, size, hp, color, emissive, speed);
         if (!entry) return;
@@ -3491,9 +3491,9 @@
         let closestZ = -999;
         for (let i = obstacles.length - 1; i >= 0; i--) {
           const obs = obstacles[i];
-          // 远快近慢：z 越深速度越快，靠近玩家时减速 (1.0x 到 2.0x)
+          // 远快近慢：z 越深速度越快，靠近玩家时减速 (1.0x 到 3.0x)
           const zNorm = Math.max(0, Math.min(1, -obs.body.position.z / TUNNEL_LENGTH));
-          const speedMul = 1.0 + zNorm * 1.0;
+          const speedMul = 1.0 + zNorm * 2.0;
           obs.body.position.z += obs.speed * speedMul * dt;
           obs.mesh.position.set(obs.body.position.x, obs.body.position.y, obs.body.position.z);
           // Rotate core and shell independently

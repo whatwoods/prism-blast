@@ -2280,7 +2280,7 @@
         const hue = hp === 1 ? Math.random() : hp === 2 ? 0.08 : 0.0;
         const color = new THREE.Color().setHSL(hue, 0.65, 0.5);
         const emissive = new THREE.Color().setHSL(hue, 0.75, 0.35);
-        const speed = OBSTACLE_SPEED + difficulty * 0.10;
+        const speed = OBSTACLE_SPEED + difficulty * 0.20;
 
         const entry = acquireObstacle(px, py, pz, size, hp, color, emissive, speed);
         if (!entry) return;

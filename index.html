@@ -238,7 +238,7 @@ canvas { display: block; width: 100%; height: 100%; }
 #ammo-bar .dot.spent { opacity: 0.12; transform: scaleY(0.5); }
 
 #powerup-indicator {
-  position: absolute; bottom: 60px; left: 50%; transform: translateX(-50%);
+  position: absolute; top: 80px; left: 50%; transform: translateX(-50%);
   font-family: 'Orbitron', sans-serif; font-size: 14px; font-weight: 700;
   color: var(--neon-yellow); letter-spacing: 4px;
   text-shadow: 0 0 15px var(--neon-yellow);
@@ -1147,6 +1147,7 @@ canvas { display: block; width: 100%; height: 100%; }
   const waveAnnEl = document.getElementById('wave-announce');
   const dangerVig = document.getElementById('danger-vignette');
   const powerupInd = document.getElementById('powerup-indicator');
+  const hudEl = document.getElementById('hud');
 
   // ─── OBJECT POOLS ───
   function initBulletPool() {
@@ -1408,6 +1409,8 @@ canvas { display: block; width: 100%; height: 100%; }
         u_aberration: { value: 0.0 },
         u_time: { value: 0.0 },
         u_dofStrength: { value: 0.012 },
+        u_overdrive: { value: 0.0 },
+        u_speedBlur: { value: 0.0 },
       },
       vertexShader: 'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
       fragmentShader: GLITCH_FRAG
@@ -1426,6 +1429,8 @@ canvas { display: block; width: 100%; height: 100%; }
     initObstaclePool();
     initExplosionPool();
     initDebrisPool();
+
+    if (hudEl) { hudEl.style.perspective = '800px'; hudEl.style.transformStyle = 'preserve-3d'; }
 
     window.addEventListener('resize', onResize);
     window.addEventListener('mousemove', onMouseMove);
@@ -1685,6 +1690,7 @@ canvas { display: block; width: 100%; height: 100%; }
         glitchIntensity = Math.min(glitchIntensity + 0.6, 1.0);
         tunnelUniforms.u_hueShift.value += 0.1;
         hitStopTimer = 0.06; // longer for big kills
+        if (glitchPass) glitchPass.uniforms.u_overdrive.value = 0.8; // Visual overdrive flash
       }
       playHit(); vibrate();
       if (waveKills >= waveThreshold) {
@@ -1740,11 +1746,14 @@ canvas { display: block; width: 100%; height: 100%; }
     if (type.effect === 'shield') { shield = 2; updateLivesUI(); spawnBonusPopup('护盾 x2'); }
     else { activePowerup = type.effect; powerupTimer = 6; powerupInd.textContent = type.name; powerupInd.classList.add('active'); spawnBonusPopup(type.name); }
   }
-  function spawnBonusPopup(text) {
-    const el = document.createElement('div'); el.className = 'bonus-popup';
-    el.textContent = text; el.style.left = '50%'; el.style.top = '45%'; el.style.transform = 'translateX(-50%)';
-    document.body.appendChild(el); setTimeout(() => el.remove(), 1200);
+  function spawnPopup(text, className, top, duration) {
+    const el = document.createElement('div'); el.className = className;
+    el.textContent = text;
+    el.style.left = '50%'; el.style.top = top; el.style.transform = 'translateX(-50%)';
+    document.body.appendChild(el); setTimeout(() => el.remove(), duration);
   }
+  function spawnScorePopup(pts) { spawnPopup('+' + pts, 'score-popup', '50%', 900); }
+  function spawnBonusPopup(text) { spawnPopup(text, 'bonus-popup', '45%', 1200); }
 
   // ═══ BOSS SYSTEM ═══
   function spawnBoss(bossLevel) {
@@ -1780,7 +1789,7 @@ canvas { display: block; width: 100%; height: 100%; }
       const pGeo = new THREE.BoxGeometry(bossSize * 0.8, bossSize * 0.8, 0.4);
       const pMat = new THREE.MeshPhysicalMaterial({
          color: 0x00f0ff, emissive: 0x0088aa, emissiveIntensity: 1.5,
-         metalness: 0.8, roughness: 0.2, transparent: true, opacity: 0.9
+         transparent: true, opacity: 0.9
       });
       const pMesh = new THREE.Mesh(pGeo, pMat);
       
@@ -1847,6 +1856,7 @@ canvas { display: block; width: 100%; height: 100%; }
     b.coreMesh.rotation.y += dt * b.rotSpeed;
     b.innerMesh.rotation.x -= dt * b.rotSpeed * 1.2;
     b.innerMesh.rotation.y -= dt * b.rotSpeed * 1.5;
+    
 
     // Plates orbit
     if (b.plates) {
@@ -2603,21 +2613,39 @@ canvas { display: block; width: 100%; height: 100%; }
     glitchPass.uniforms.u_intensity.value = glitchIntensity;
     glitchPass.uniforms.u_time.value = globalTime;
 
-    // Skip full-screen glitch pass when no effects are active
-    const hasGlitchEffects = glitchIntensity > 0 ||
-      glitchPass.uniforms.u_aberration.value > 0 ||
-      glitchPass.uniforms.u_dofStrength.value > 0.002;
-    glitchPass.enabled = hasGlitchEffects;
-
     // Chromatic aberration decay
     if (glitchPass.uniforms.u_aberration.value > 0.001) {
       glitchPass.uniforms.u_aberration.value *= Math.pow(0.0001, dt);
       if (glitchPass.uniforms.u_aberration.value < 0.001) glitchPass.uniforms.u_aberration.value = 0;
     }
 
+    // Skip full-screen glitch pass when no effects are active
+    glitchPass.enabled = glitchIntensity > 0 ||
+      glitchPass.uniforms.u_aberration.value > 0 ||
+      glitchPass.uniforms.u_overdrive.value > 0 ||
+      glitchPass.uniforms.u_speedBlur.value > 0.001 ||
+      glitchPass.uniforms.u_dofStrength.value > 0.002;
+
     // Dynamic DoF — sharpen at high combo, blur at low life
     const targetDof = lives <= 1 ? 0.03 : (combo >= 10 ? 0.003 : 0.012);
     glitchPass.uniforms.u_dofStrength.value += (targetDof - glitchPass.uniforms.u_dofStrength.value) * dt * 4.0;
+
+    // Visual Overdrive decay
+    if (glitchPass.uniforms.u_overdrive.value > 0.001) {
+      glitchPass.uniforms.u_overdrive.value *= Math.pow(0.001, dt);
+      if (glitchPass.uniforms.u_overdrive.value < 0.001) glitchPass.uniforms.u_overdrive.value = 0;
+    }
+
+    // Radial speed blur based on combo and fov
+    const targetSpeedBlur = combo >= 10 ? (combo - 10) * 0.02 + fovPulse * 0.5 : fovPulse * 0.5;
+    glitchPass.uniforms.u_speedBlur.value += (targetSpeedBlur - glitchPass.uniforms.u_speedBlur.value) * dt * 5.0;
+
+    // Diegetic HUD tilt — rotate opposite to camera to simulate lagging helmet UI
+    if (hudEl) {
+      const rotX = -camera.rotation.x * 30;
+      const rotY = -camera.rotation.y * 30;
+      hudEl.style.transform = `rotateX(${rotX}deg) rotateY(${rotY}deg) translateZ(10px)`;
+    }
 
     composer.render();
   }
@@ -2700,7 +2728,10 @@ canvas { display: block; width: 100%; height: 100%; }
     if (glitchPass) {
       glitchPass.uniforms.u_intensity.value = 0;
       glitchPass.uniforms.u_aberration.value = 0;
+      glitchPass.uniforms.u_overdrive.value = 0;
+      glitchPass.uniforms.u_speedBlur.value = 0;
     }
+    if (hudEl) hudEl.style.transform = '';
     updateLivesUI();
     document.body.style.transform = '';
   }

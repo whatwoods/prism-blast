@@ -199,12 +199,9 @@ canvas { display: block; width: 100%; height: 100%; }
 #combo-panel .label { font-size: 11px; letter-spacing: 6px; opacity: 0.7; margin-bottom: 4px; }
 #combo-panel .value { font-size: 32px; font-weight: 700; color: #fff; text-shadow: 0 0 20px rgba(255,0,170,0.8), 0 0 4px rgba(255,0,170,1); transition: transform 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
 
-#wave-panel {
-  position: absolute; bottom: 36px; left: 42px;
-  font-family: 'Share Tech Mono', monospace; font-size: 12px;
-  letter-spacing: 4px; opacity: 0.6; text-transform: uppercase;
-  text-shadow: 0 0 8px rgba(0,240,255,0.4);
-}
+#wave-panel { position: absolute; bottom: 36px; left: 42px; text-align: left; font-family: 'Orbitron', sans-serif; text-shadow: 0 0 10px rgba(0,240,255,0.6); }
+#wave-panel .label { font-size: 11px; letter-spacing: 6px; opacity: 0.7; margin-bottom: 4px; }
+#wave-panel .value { font-size: 32px; font-weight: 700; color: #fff; text-shadow: 0 0 20px rgba(0,240,255,0.8), 0 0 4px rgba(0,240,255,1); }
 
 #wave-announce {
   position: fixed; top: 38%; left: 50%; transform: translate(-50%,-50%);
@@ -239,7 +236,7 @@ canvas { display: block; width: 100%; height: 100%; }
 
 #powerup-indicator {
   position: absolute; top: 80px; left: 50%; transform: translateX(-50%);
-  font-family: 'Orbitron', sans-serif; font-size: 14px; font-weight: 700;
+  font-family: 'Orbitron', sans-serif; font-size: 24px; font-weight: 700;
   color: var(--neon-yellow); letter-spacing: 4px;
   text-shadow: 0 0 15px var(--neon-yellow);
   opacity: 0; transition: opacity 0.3s;
@@ -259,8 +256,10 @@ canvas { display: block; width: 100%; height: 100%; }
   #combo-panel { bottom: 12px; right: 12px; }
   #combo-panel .value { font-size: 20px; }
   #combo-panel .label { font-size: 8px; }
-  #wave-panel { bottom: 12px; left: 12px; font-size: 10px; letter-spacing: 2px; }
-  #powerup-indicator { bottom: 36px; font-size: 11px; letter-spacing: 2px; }
+  #wave-panel { bottom: 12px; left: 12px; }
+  #wave-panel .value { font-size: 20px; }
+  #wave-panel .label { font-size: 8px; }
+  #powerup-indicator { bottom: 36px; font-size: 16px; letter-spacing: 2px; }
   #hud .corner { width: 60px; height: 60px; }
   #hud .corner.tl { top: 8px; left: 8px; }
   #hud .corner.tr { top: 8px; right: 8px; }
@@ -445,7 +444,7 @@ canvas { display: block; width: 100%; height: 100%; }
   <div class="corner tl"></div><div class="corner tr"></div>
   <div class="corner bl"></div><div class="corner br"></div>
   <div id="score-panel"><div class="label">分数</div><div class="value" id="score-val">0</div></div>
-  <div id="wave-panel">第 1 波</div>
+  <div id="wave-panel"><div class="label">波次</div><div class="value" id="wave-val">第 1 波</div></div>
   <div id="combo-panel"><div class="label">连击</div><div class="value" id="combo-val">x1</div></div>
   <div id="lives-panel"></div>
     <div id="boss-hud" style="display:none;">
@@ -1212,6 +1211,7 @@ canvas { display: block; width: 100%; height: 100%; }
   const statLineEl = document.getElementById('stat-line');
   const damageFlash = document.getElementById('damage-flash');
   const wavePanelEl = document.getElementById('wave-panel');
+  const waveValEl = document.getElementById('wave-val');
   const waveAnnEl = document.getElementById('wave-announce');
   const dangerVig = document.getElementById('danger-vignette');
   const powerupInd = document.getElementById('powerup-indicator');
@@ -1279,6 +1279,8 @@ canvas { display: block; width: 100%; height: 100%; }
 
     entry.active = true;
     entry.age = 0;
+    entry._bounces = 0;
+    entry._bounceCooldown = 0;
     entry.mesh.visible = true;
     entry.mesh.position.copy(startPos);
     entry.mesh.lookAt(startPos.clone().add(dir));
@@ -1696,7 +1698,7 @@ canvas { display: block; width: 100%; height: 100%; }
     const dirs = [dir];
     // Triple powerup
     if (activePowerup === 'triple') {
-      const spread = 0.08;
+      const spread = 0.04;
       const right = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0,1,0)).normalize();
       dirs.push(dir.clone().addScaledVector(right, spread).normalize());
       dirs.push(dir.clone().addScaledVector(right, -spread).normalize());
@@ -1818,7 +1820,7 @@ canvas { display: block; width: 100%; height: 100%; }
   function activatePowerup(type) {
     playPowerup();
     if (type.effect === 'shield') { shield = 2; updateLivesUI(); spawnBonusPopup('护盾 x2'); }
-    else { activePowerup = type.effect; powerupTimer = 6; powerupInd.textContent = type.name; powerupInd.classList.add('active'); spawnBonusPopup(type.name); }
+    else { activePowerup = type.effect; powerupTimer = 4; powerupInd.textContent = type.name; powerupInd.classList.add('active'); spawnBonusPopup(type.name); }
   }
   function spawnPopup(text, className, top, duration) {
     const el = document.createElement('div'); el.className = className;
@@ -2846,9 +2848,9 @@ canvas { display: block; width: 100%; height: 100%; }
           bossActive = true;
           showBossHud('维度风暴 Lv.' + bossLevel);
           announceWave('⚠ 警告: 维度风暴 接近 ⚠');
-          wavePanelEl.textContent = 'BOSS ' + bossLevel;
+          waveValEl.textContent = 'BOSS ' + bossLevel;
         } else {
-          wavePanelEl.textContent = '第 ' + wave + ' 波'; announceWave('第 ' + wave + ' 波');
+          waveValEl.textContent = '第 ' + wave + ' 波'; announceWave('第 ' + wave + ' 波');
           for (let i = 0; i < 3; i++) spawnObstacle();
         }
       }
@@ -2929,10 +2931,14 @@ canvas { display: block; width: 100%; height: 100%; }
     // Balls + trails
     for (let i = balls.length - 1; i >= 0; i--) {
       const b = balls[i]; b.age += dt;
+      if (b._bounceCooldown > 0) b._bounceCooldown -= dt;
       if (constrainToCylinder(b.body)) {
-        b._bounces = (b._bounces || 0) + 1;
-        if (b._bounces >= MAX_BOUNCES) {
-          releaseBullet(b); balls.splice(i, 1); continue;
+        if (b._bounceCooldown <= 0) {
+          b._bounces = (b._bounces || 0) + 1;
+          b._bounceCooldown = 0.05; // 50ms cooldown to prevent double-bounces from floating point errors
+          if (b._bounces >= MAX_BOUNCES) {
+            releaseBullet(b); balls.splice(i, 1); continue;
+          }
         }
       }
       b.mesh.position.set(b.body.position.x, b.body.position.y, b.body.position.z);
@@ -3159,7 +3165,7 @@ canvas { display: block; width: 100%; height: 100%; }
     // Reset fog
     if (scene.fog) { scene.fog.density = 0.008; scene.fog.color.setHex(0x06060e); }
     scoreEl.textContent = '0'; comboEl.textContent = 'x1';
-    wavePanelEl.textContent = '第 1 波';
+    waveValEl.textContent = '第 1 波';
     powerupInd.classList.remove('active');
     dangerVig.style.opacity = '0';
     tunnelUniforms.u_hueShift.value = 0;

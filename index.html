@@ -551,6 +551,34 @@
       transform: translate(-50%, -50%) scale(1.1);
     }
 
+    #wave-break-panel {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+      pointer-events: none;
+      z-index: 20;
+      opacity: 0;
+      transition: opacity 0.4s;
+    }
+    #wave-break-panel.show { opacity: 1; }
+    #wave-break-title {
+      font-family: 'Orbitron', sans-serif;
+      font-size: clamp(16px, 2.5vw, 24px);
+      color: #4dd89a;
+      letter-spacing: 6px;
+      text-shadow: 0 0 20px rgba(77,216,154,0.8);
+      margin-bottom: 10px;
+    }
+    #wave-break-countdown {
+      font-family: 'Orbitron', sans-serif;
+      font-size: clamp(40px, 7vw, 64px);
+      font-weight: 900;
+      color: #fff;
+      text-shadow: 0 0 30px rgba(0,240,255,1), 0 0 8px rgba(0,240,255,1);
+    }
+
     #lives-panel {
       position: absolute;
       top: 32px;
@@ -582,29 +610,6 @@
       opacity: 0.9;
       filter: drop-shadow(0 0 4px var(--neon-cyan));
       transition: opacity 0.3s, transform 0.3s;
-    }
-
-    #ammo-bar {
-      position: absolute;
-      bottom: 36px;
-      right: 42px;
-      display: flex;
-      gap: 6px;
-      align-items: center;
-      filter: drop-shadow(0 0 6px var(--neon-cyan));
-    }
-
-    #ammo-bar .dot {
-      width: 10px;
-      height: 24px;
-      background: var(--neon-cyan);
-      border-radius: 2px;
-      transition: opacity 0.15s, transform 0.15s;
-    }
-
-    #ammo-bar .dot.spent {
-      opacity: 0.12;
-      transform: scaleY(0.5);
     }
 
     #powerup-indicator {
@@ -642,17 +647,6 @@
       .shield-pip {
         width: 12px;
         height: 12px;
-      }
-
-      #ammo-bar {
-        bottom: 12px;
-        right: 12px;
-        gap: 3px;
-      }
-
-      #ammo-bar .dot {
-        width: 6px;
-        height: 16px;
       }
 
       #score-panel {
@@ -1054,12 +1048,15 @@
       <div id="boss-phase-text"></div>
     </div>
     <div id="powerup-indicator"></div>
-    <div id="ammo-bar" style="display:none"></div>
   </div>
 
   <div id="damage-flash"></div>
   <div id="danger-vignette"></div>
   <div id="wave-announce"></div>
+  <div id="wave-break-panel">
+    <div id="wave-break-title"></div>
+    <div id="wave-break-countdown"></div>
+  </div>
   <div id="scanlines"></div>
 
   <!-- PLACEHOLDER: Title screen animation script -->
@@ -1228,8 +1225,8 @@
       // ═══════════════════════════════════════
 
       const TUNNEL_RADIUS = 5, TUNNEL_LENGTH = 120, BALL_RADIUS = 0.22, BALL_SPEED = 60;
-      const BASE_MAX_AMMO = 8, AMMO_REGEN_TIME = 0.6, OBSTACLE_SPEED = 10;
-      const SPAWN_INTERVAL = 1.3, MAX_OBSTACLES = 25, MAX_LIVES = 5, TRAJECTORY_LEN = 40;
+      const OBSTACLE_SPEED = 13;
+      const SPAWN_INTERVAL = 1.1, MAX_OBSTACLES = 30, MAX_LIVES = 5, TRAJECTORY_LEN = 40;
       const TRAIL_MAX_POINTS = 24;
       const AUTO_FIRE_INTERVAL = 0.18; // seconds between auto-fire shots
       const BULLET_POOL_SIZE = 50;
@@ -1238,7 +1235,7 @@
       let scene, camera, renderer, composer, bloomPass, glitchPass;
       let clock, gameActive = false;
       let score = 0, combo = 1, comboTimer = 0, maxCombo = 1, kills = 0;
-      let lives = MAX_LIVES, ammo = BASE_MAX_AMMO, maxAmmo = BASE_MAX_AMMO, ammoRegenAccum = 0;
+      let lives = MAX_LIVES;
       const mouseNDC = { x: 0, y: 0 };
       let balls = [], obstacles = [], spawnAccum = 0;
       let bulletPool = [], obstaclePool = [];
@@ -1248,9 +1245,9 @@
       let nebulaUniforms; // FBM nebula shader uniforms
       let tunnelRings = []; // structural rings for movement
       let difficulty = 1, shakeIntensity = 0;
-      let wave = 1, waveKills = 0, waveThreshold = 10;
+      let wave = 1, waveKills = 0, waveThreshold = 20;
       let waveBreakTimer = 0;
-      const WAVE_BREAK_DURATION = 3.0;
+      const WAVE_BREAK_DURATION = 2.8;
       let tunnelPulse = 0, fovPulse = 0, baseFov = 45;
       let powerups = [], activePowerup = null, powerupTimer = 0;
       let shield = 0;
@@ -1797,7 +1794,6 @@
       // ─── DOM ───
       const scoreEl = document.getElementById('score-val');
       const comboEl = document.getElementById('combo-val');
-      const ammoBarEl = document.getElementById('ammo-bar');
       const livesPanel = document.getElementById('lives-panel');
       const titleScreen = document.getElementById('title-screen');
       const gameOverScr = document.getElementById('game-over');
@@ -1807,6 +1803,9 @@
       const wavePanelEl = document.getElementById('wave-panel');
       const waveValEl = document.getElementById('wave-val');
       const waveAnnEl = document.getElementById('wave-announce');
+      const waveBreakPanelEl = document.getElementById('wave-break-panel');
+      const waveBreakTitleEl = document.getElementById('wave-break-title');
+      const waveBreakCountdownEl = document.getElementById('wave-break-countdown');
       const dangerVig = document.getElementById('danger-vignette');
       const powerupInd = document.getElementById('powerup-indicator');
       const hudEl = document.getElementById('hud');
@@ -2248,8 +2247,6 @@
         pa.needsUpdate = true;
       }
 
-      function createAmmoUI() { ammoBarEl.innerHTML = ''; for (let i = 0; i < maxAmmo; i++) { const d = document.createElement('div'); d.className = 'dot'; ammoBarEl.appendChild(d); } }
-      function updateAmmoUI() { ammoBarEl.querySelectorAll('.dot').forEach((d, i) => d.classList.toggle('spent', i >= ammo)); }
       function createLivesUI() { livesPanel.innerHTML = ''; for (let i = 0; i < MAX_LIVES; i++) { const h = document.createElement('div'); h.className = 'heart'; livesPanel.appendChild(h); } }
       function updateLivesUI() {
         livesPanel.querySelectorAll('.heart').forEach((h, i) => h.classList.toggle('lost', i >= lives));
@@ -2276,11 +2273,10 @@
         const px = Math.cos(angle) * dist, py = Math.sin(angle) * dist;
         const pz = -TUNNEL_LENGTH + 5;
         const hp = 1;
-        // Desaturated color palette for obstacles
-        const hue = hp === 1 ? Math.random() : hp === 2 ? 0.08 : 0.0;
+        const hue = Math.random();
         const color = new THREE.Color().setHSL(hue, 0.65, 0.5);
         const emissive = new THREE.Color().setHSL(hue, 0.75, 0.35);
-        const speed = OBSTACLE_SPEED + difficulty * 0.20;
+        const speed = OBSTACLE_SPEED + (difficulty - 1) * 3.0;
 
         const entry = acquireObstacle(px, py, pz, size, hp, color, emissive, speed);
         if (!entry) return;
@@ -2335,13 +2331,13 @@
         const impactDir = ballDir ? ballDir.clone().normalize() : new THREE.Vector3(0, 0, -1);
         obs.hp--;
         if (obs.hp <= 0) {
-          spawnDebris(obs.mesh.position.clone(), obs.color, impactDir, obs.maxHp > 1 ? 12 : 8);
+          spawnDebris(obs.mesh.position.clone(), obs.color, impactDir, 8);
           releaseObstacle(obs._poolEntry);
           obstacles.splice(idx, 1);
           kills++; waveKills++;
           combo++; if (combo > maxCombo) maxCombo = combo;
           comboTimer = 1.5;
-          const pts = 50 * combo * (obs.maxHp || 1);
+          const pts = 50 * combo;
           score += pts; scoreEl.textContent = score;
           comboEl.textContent = 'x' + combo;
           comboEl.style.transform = 'scale(1.4)';
@@ -2355,32 +2351,15 @@
           shakeIntensity = Math.min(shakeIntensity + 0.15, 0.6);
           tunnelPulse = 0.15;
           fovPulse = Math.min(fovPulse + 0.3, 1.0);
-          // Hit stop: 40ms on kill
           hitStopTimer = 0.04;
-          if (obs.maxHp > 1) {
-            glitchIntensity = Math.min(glitchIntensity + 0.6, 1.0);
-            tunnelUniforms.u_hueShift.value += 0.1;
-            hitStopTimer = 0.06; // longer for big kills
-            if (glitchPass) glitchPass.uniforms.u_overdrive.value = 0.8; // Visual overdrive flash
-          }
           playHit(); vibrate();
           if (waveKills >= waveThreshold) {
             // Enter wave break — stop spawning, let remaining obstacles clear
             waveBreakTimer = WAVE_BREAK_DURATION;
             waveKills = 0;
-            // Restore resources
-            maxAmmo++;
-            lives = Math.min(lives + 2, MAX_LIVES); updateLivesUI();        // Spawn powerup during break
+            lives = Math.min(lives + 2, MAX_LIVES); updateLivesUI();
             spawnPowerup();
           }
-        } else {
-          obs.coreMat.emissiveIntensity = 4.0;
-          const origColor = obs.coreMat.color.clone();
-          obs.coreMat.color.set(0xffffff);
-          setTimeout(() => { obs.coreMat.color.copy(origColor); obs.coreMat.emissiveIntensity = 1.5; }, 80);
-          createGPUExplosion(obs.mesh.position.clone(), obs.color, 30, impactDir);
-          playHit(); shakeIntensity = Math.min(shakeIntensity + 0.05, 0.3);
-          hitStopTimer = 0.015; // light hitstop on non-kill
         }
       }
 
@@ -3071,6 +3050,9 @@
 
           waveBreakTimer = WAVE_BREAK_DURATION;
           lives = MAX_LIVES; updateLivesUI();
+          waveBreakTitleEl.textContent = 'BOSS 击败';
+          waveBreakCountdownEl.textContent = Math.ceil(WAVE_BREAK_DURATION);
+          waveBreakPanelEl.classList.add('show');
         }
 
         // ─ Dispose (external, for resetState) ─
@@ -3439,7 +3421,7 @@
           b.position.y += b.velocity.y * dt;
           b.position.z += b.velocity.z * dt;
         }
-        difficulty = 1 + score / 5000;
+        difficulty = 1 + (wave - 1) * 0.18;
 
         // Spawn — paused during wave break or boss
         if (bossActive && boss) {
@@ -3449,10 +3431,14 @@
           updateDamageCombo(dt);
         } else if (waveBreakTimer > 0) {
           waveBreakTimer -= dt;
+          if (waveBreakPanelEl.classList.contains('show')) {
+            waveBreakCountdownEl.textContent = Math.max(1, Math.ceil(waveBreakTimer));
+          }
           if (waveBreakTimer <= 0) {
             // Break over — advance to next wave
             waveBreakTimer = 0;
-            wave++; waveThreshold = Math.floor(10 + wave * 4);
+            waveBreakPanelEl.classList.remove('show');
+            wave++; waveThreshold = Math.floor(10 + Math.log2(wave + 1) * 9);
             // Boss every 10 waves
             if (wave % 10 === 0) {
               const bossLevel = wave / 10;
@@ -3463,12 +3449,18 @@
               waveValEl.textContent = 'BOSS ' + bossLevel;
             } else {
               waveValEl.textContent = '第 ' + wave + ' 波'; announceWave('第 ' + wave + ' 波');
-              for (let i = 0; i < 3; i++) spawnObstacle();
+              const initCount = Math.min(Math.floor(wave / 3) + 1, 8);
+              for (let i = 0; i < initCount; i++) spawnObstacle();
             }
           }
         } else {
           spawnAccum += dt;
-          const spawnRate = Math.max(0.5, SPAWN_INTERVAL / difficulty);
+          // Phase-based spawn rate within the wave
+          const waveProgress = waveThreshold > 0 ? waveKills / waveThreshold : 0;
+          let phaseSpawnMult;
+          if (waveProgress < 0.3) phaseSpawnMult = 1.0;  // warmup: normal pace
+          else phaseSpawnMult = 2.2;                     // surge: faster until wave ends
+          const spawnRate = Math.max(0.2, SPAWN_INTERVAL / (difficulty * phaseSpawnMult));
           if (spawnAccum > spawnRate && obstacles.length < MAX_OBSTACLES) { spawnObstacle(); spawnAccum = 0; }
         }
 
@@ -3492,9 +3484,7 @@
         for (let i = obstacles.length - 1; i >= 0; i--) {
           const obs = obstacles[i];
           // 远快近慢：z 越深速度越快，靠近玩家时减速 (1.0x 到 3.0x)
-          const zNorm = Math.max(0, Math.min(1, -obs.body.position.z / TUNNEL_LENGTH));
-          const speedMul = 1.0 + zNorm * 2.0;
-          obs.body.position.z += obs.speed * speedMul * dt;
+          obs.body.position.z += obs.speed * dt;
           obs.mesh.position.set(obs.body.position.x, obs.body.position.y, obs.body.position.z);
           // Rotate core and shell independently
           obs.mesh.children[0].rotation.x += dt * 1.5;
@@ -3766,9 +3756,9 @@
         tunnelRadius = TUNNEL_RADIUS_NORMAL;
         balls = []; obstacles = []; powerups = [];
         score = 0; combo = 1; comboTimer = 0; maxCombo = 1; kills = 0;
-        lives = MAX_LIVES; ammoRegenAccum = 0;
+        lives = MAX_LIVES;
         spawnAccum = 0; difficulty = 1; shakeIntensity = 0;
-        wave = 1; waveKills = 0; waveThreshold = 10; waveBreakTimer = 0; tunnelPulse = 0; fovPulse = 0;
+        wave = 1; waveKills = 0; waveThreshold = 20; waveBreakTimer = 0; tunnelPulse = 0; fovPulse = 0;
         glitchIntensity = 0;
         hitStopTimer = 0;
         isHolding = false; autoFireAccum = 0; fireCooldown = 0;
@@ -3778,6 +3768,7 @@
         if (scene.fog) { scene.fog.density = 0.008; scene.fog.color.setHex(0x06060e); }
         scoreEl.textContent = '0'; comboEl.textContent = 'x1';
         waveValEl.textContent = '第 1 波';
+        waveBreakPanelEl.classList.remove('show');
         powerupInd.classList.remove('active');
         dangerVig.style.opacity = '0';
         tunnelUniforms.u_hueShift.value = 0;

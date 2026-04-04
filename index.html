@@ -1392,7 +1392,13 @@
         '  // 网格边缘微发光，参与 bloom（蓝青霓虹溢出）',
         '  vec3 bloomTint = mix(vec3(0.1, 0.15, 0.6), vec3(0.0, 0.4, 0.5), gradientPhase);',
         '  finalCol += bloomTint * (hexOutline * 0.2 + neonSpread * 0.1) * (1.0 + comboNorm * 0.5);',
-        '  gl_FragColor = vec4(finalCol, 1.0);',
+        '',
+        '  // 计算透明度 (Alpha)，使得内部通透、网格线和发光能量可见',
+        '  float baseAlpha = hexOutline + (hexFill * 0.15) + (energy * 0.3) + neonSpread;',
+        '  float finalAlpha = clamp(baseAlpha + rippleTotal + u_pulse * 0.5, 0.0, 1.0);',
+        '  finalAlpha *= smoothstep(0.0, 0.05, depth); // 远端边缘稍微淡出',
+        '  ',
+        '  gl_FragColor = vec4(finalCol, finalAlpha);',
         '}'
       ].join('\n');
 
@@ -2137,6 +2143,7 @@
           vertexShader: TUNNEL_VERT,
           fragmentShader: TUNNEL_FRAG,
           side: THREE.BackSide,   // render interior faces (replaces scale(-1,1,1))
+          transparent: true,      // enable alpha for the transparent hex grid
           precision: 'highp',     // force highp on mobile — mediump breaks noise/fbm
         });
 
